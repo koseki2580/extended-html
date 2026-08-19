@@ -11,6 +11,8 @@ test("tests, stages, and deploys the Pages artifact with minimal permissions", a
   assert.match(workflow, /branches:\s*\[main\]/);
   assert.match(workflow, /- "src\/\*\*"/);
   assert.match(workflow, /- "examples\/\*\*"/);
+  assert.match(workflow, /- "guide\/\*\*"/);
+  assert.match(workflow, /- "README\.md"/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm test/);
   assert.match(workflow, /npm run pages:stage/);

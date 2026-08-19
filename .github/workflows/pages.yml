@@ -7,6 +7,8 @@ on:
     paths:
       - "src/**"
       - "examples/**"
+      - "guide/**"
+      - "README.md"
       - "index.html"
       - "package.json"
       - "package-lock.json"

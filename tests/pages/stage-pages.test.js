@@ -23,6 +23,9 @@ test("stages only the static site and runtime source", async () => {
       "examples/index.html",
       "examples/web-socket/index.html",
       "examples/web-socket/background.html",
+      "guide/en/index.html",
+      "guide/ja/index.html",
+      "guide/assets/guide.css",
       "src/index.js",
       "src/web-socket/web-socket.worker.js",
     ];

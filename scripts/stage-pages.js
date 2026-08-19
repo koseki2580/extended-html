@@ -2,7 +2,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const publishedPaths = ["index.html", "examples", "src"];
+const publishedPaths = ["index.html", "examples", "guide", "src"];
 
 /**
  * Rebuilds a GitHub Pages artifact from the explicit public-file allowlist.
