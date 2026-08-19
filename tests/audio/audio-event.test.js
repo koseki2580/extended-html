@@ -28,6 +28,7 @@ const assertThrows = (callback, ErrorType, name, message) => {
 
 class TestAudioEventTargetElement extends AudioEventTargetElement {
   static observedAttributes = ["onready"];
+  static audioEventTypes = ["ready"];
 }
 
 if (!customElements.get("test-audio-event-target")) {
@@ -89,11 +90,11 @@ describe("AudioEventTargetElement handlers", () => {
       secondCalls += 1;
     };
 
-    element._setAudioEventHandler("ready", first);
+    element.onready = first;
     element.dispatchEvent(new Event("ready"));
-    element._setAudioEventHandler("ready", second);
+    element.onready = second;
     element.dispatchEvent(new Event("ready"));
-    element._setAudioEventHandler("ready", null);
+    element.onready = null;
     element.dispatchEvent(new Event("ready"));
 
     assertEqual(firstCalls, 1, "replaced handler is removed");
@@ -103,24 +104,24 @@ describe("AudioEventTargetElement handlers", () => {
 
   it("clears a property handler when assigned a non-function", () => {
     const element = createElement();
-    element._setAudioEventHandler("ready", () => {});
+    element.onready = () => {};
 
-    element._setAudioEventHandler("ready", "not a function");
+    element.onready = "not a function";
 
     assertEqual(element.onready, null, "non-function clears handler");
   });
 
-  it("binds global and dotted declarative handlers with the element as this", () => {
+  it("binds global and one-segment dotted declarative handlers with the element as this", () => {
     const element = createElement();
     const calls = [];
     globalThis.AudioEventTestHandlers = {
       global(event) {
         calls.push(["global", this, event.type]);
       },
-      namespace: {
-        nested(event) {
-          calls.push(["nested", this, event.type]);
-        },
+    };
+    globalThis.AudioEventTestNamespace = {
+      nested(event) {
+        calls.push(["nested", this, event.type]);
       },
     };
 
@@ -132,17 +133,19 @@ describe("AudioEventTargetElement handlers", () => {
       element.dispatchEvent(new Event("ready"));
       element._updateDeclarativeAudioHandler(
         "onready",
-        "AudioEventTestHandlers.namespace.nested(event)",
+        "AudioEventTestNamespace.nested(event)",
       );
       element.dispatchEvent(new Event("ready"));
 
       assertEqual(calls.length, 2, "both declarative handlers run once");
+      assert(typeof element.onready === "function", "declarative binding uses the property accessor");
       assertEqual(calls[0][0], "global", "global handler is selected");
       assertEqual(calls[1][0], "nested", "dotted handler is selected");
       assertEqual(calls[0][1], element, "global handler this value");
       assertEqual(calls[1][1], element, "dotted handler this value");
     } finally {
       delete globalThis.AudioEventTestHandlers;
+      delete globalThis.AudioEventTestNamespace;
     }
   });
 
@@ -170,7 +173,7 @@ describe("AudioEventTargetElement handlers", () => {
     const element = createElement();
 
     assertThrows(
-      () => element._updateDeclarativeAudioHandler("onready", "run()"),
+      () => element._updateDeclarativeAudioHandler("onready", "A.B.Handler(event)"),
       SyntaxError,
       "SyntaxError",
       "onready must call a global handler with event, for example Handler(event)",
@@ -191,5 +194,23 @@ describe("AudioEventTargetElement handlers", () => {
       "ReferenceError",
       "MissingAudioHandler is not a global function",
     );
+  });
+
+  it("throws a ReferenceError when a declarative global resolves to a non-function", () => {
+    const element = createElement();
+    globalThis.NonFunctionAudioHandler = {};
+
+    try {
+      element._updateDeclarativeAudioHandler("onready", "NonFunctionAudioHandler(event)");
+
+      assertThrows(
+        () => element.onready(new Event("ready")),
+        ReferenceError,
+        "ReferenceError",
+        "NonFunctionAudioHandler is not a global function",
+      );
+    } finally {
+      delete globalThis.NonFunctionAudioHandler;
+    }
   });
 });

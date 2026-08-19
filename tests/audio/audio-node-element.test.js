@@ -66,6 +66,8 @@ describe("AudioNodeElement", () => {
       "InvalidStateError",
       "Audio node already belongs to a different audio context",
     );
+    element._setAudioOwner(null);
+    assertEqual(element._getAudioOwner(), owner, "null assignment does not clear the owner");
     element._clearAudioOwner(otherOwner);
     assertEqual(element._getAudioOwner(), owner, "other owner cannot clear it");
     element._clearAudioOwner(owner);

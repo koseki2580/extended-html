@@ -1,5 +1,5 @@
 const DECLARATIVE_HANDLER_PATTERN =
-  /^\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(\s*event\s*\)\s*;?\s*$/;
+  /^\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(\s*event\s*\)\s*;?\s*$/;
 
 export const dispatchAudioEvent = (element, type, data, owner) =>
   element.dispatchEvent(
@@ -18,7 +18,16 @@ export const dispatchAudioEvent = (element, type, data, owner) =>
   );
 
 export class AudioEventTargetElement extends HTMLElement {
+  static audioEventTypes = [];
+
   #audioEventHandlers = new Map();
+
+  constructor() {
+    super();
+    for (const type of this.constructor.audioEventTypes ?? []) {
+      this.#defineHandlerProperty(type);
+    }
+  }
 
   attributeChangedCallback(name, _oldValue, newValue) {
     if (name.startsWith("on")) {
@@ -27,8 +36,7 @@ export class AudioEventTargetElement extends HTMLElement {
   }
 
   _setAudioEventHandler(type, handler) {
-    const propertyName = `on${type}`;
-    this.#defineHandlerProperty(type, propertyName);
+    this.#defineHandlerProperty(type);
 
     const current = this.#audioEventHandlers.get(type);
     if (current) this.removeEventListener(type, current);
@@ -65,7 +73,8 @@ export class AudioEventTargetElement extends HTMLElement {
     });
   }
 
-  #defineHandlerProperty(type, propertyName) {
+  #defineHandlerProperty(type) {
+    const propertyName = `on${type}`;
     if (Object.hasOwn(this, propertyName)) return;
     Object.defineProperty(this, propertyName, {
       configurable: true,

@@ -17,8 +17,9 @@ export class AudioNodeElement extends AudioEventTargetElement {
   }
 
   _setAudioOwner(owner) {
+    if (owner === null) return;
     if (owner === this.#audioOwner) return;
-    if (this.#audioOwner !== null && owner !== null) {
+    if (this.#audioOwner !== null) {
       throw new DOMException(
         "Audio node already belongs to a different audio context",
         "InvalidStateError",
