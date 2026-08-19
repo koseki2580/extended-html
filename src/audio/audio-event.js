@@ -21,6 +21,7 @@ export class AudioEventTargetElement extends HTMLElement {
   static audioEventTypes = [];
 
   #audioEventHandlers = new Map();
+  #pendingSubclassHandlers = new Map();
 
   constructor() {
     super();
@@ -41,6 +42,7 @@ export class AudioEventTargetElement extends HTMLElement {
   }
 
   _setAudioEventHandler(type, handler) {
+    this.#pendingSubclassHandlers.delete(type);
     this.#defineHandlerProperty(type);
 
     const current = this.#audioEventHandlers.get(type);
@@ -89,7 +91,7 @@ export class AudioEventTargetElement extends HTMLElement {
 
     const subclassDescriptor = this.#findSubclassPropertyDescriptor(propertyName);
     const nativeHandler =
-      !ownDescriptor && !subclassDescriptor && !this.hasAttribute(propertyName)
+      !ownDescriptor && !this.hasAttribute(propertyName)
         ? this.#takeNativeInlineHandler(propertyName)
         : null;
     if (!subclassDescriptor) {
@@ -103,7 +105,11 @@ export class AudioEventTargetElement extends HTMLElement {
     if (ownDescriptor && this.#canAssign(subclassDescriptor)) {
       this[propertyName] = priorValue;
     } else if (typeof nativeHandler === "function") {
-      this[propertyName] = nativeHandler;
+      if (subclassDescriptor) {
+        this.#deferSubclassHandler(type, propertyName, nativeHandler);
+      } else {
+        this[propertyName] = nativeHandler;
+      }
     }
   }
 
@@ -115,6 +121,15 @@ export class AudioEventTargetElement extends HTMLElement {
       prototype = Object.getPrototypeOf(prototype);
     }
     return null;
+  }
+
+  #deferSubclassHandler(type, propertyName, handler) {
+    this.#pendingSubclassHandlers.set(type, handler);
+    queueMicrotask(() => {
+      if (this.#pendingSubclassHandlers.get(type) !== handler) return;
+      this.#pendingSubclassHandlers.delete(type);
+      this[propertyName] = handler;
+    });
   }
 
   #clearNativeInlineHandler(propertyName) {
