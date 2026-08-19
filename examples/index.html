@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Interactive examples for browser APIs exposed as custom elements."
+    />
+    <title>extended-html examples</title>
+    <link rel="stylesheet" href="./assets/site.css" />
+  </head>
+  <body data-page="overview">
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main">
+        <header class="hero">
+          <p class="eyebrow">Build-free browser components</p>
+          <h1>Browser APIs,<br />written as HTML.</h1>
+          <p class="hero-copy">
+            Explore real custom elements, inspect their markup, and exercise the
+            browser APIs they wrap without a framework or build step.
+          </p>
+        </header>
+
+        <section aria-labelledby="available-examples">
+          <div class="section-heading">
+            <p class="eyebrow">Available now</p>
+            <h2 id="available-examples">Examples</h2>
+          </div>
+          <div class="example-grid">
+            <a class="example-card" href="./web-socket/">
+              <span class="card-index">01</span>
+              <h3>WebSocket / Main</h3>
+              <p>Open, send, receive, close, and inspect main-thread events.</p>
+              <span class="card-action">Run example →</span>
+            </a>
+            <a class="example-card" href="./web-socket/background.html">
+              <span class="card-index">02</span>
+              <h3>WebSocket / Worker</h3>
+              <p>Use the same API while the native WebSocket runs in a Worker.</p>
+              <span class="card-action">Run example →</span>
+            </a>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="./assets/site.js"></script>
+  </body>
+</html>

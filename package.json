@@ -1,0 +1,25 @@
+{
+  "name": "custom-html",
+  "version": "0.1.0",
+  "description": "Browser APIs exposed as build-free custom elements.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./web-socket": "./src/web-socket/web-socket.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "npm run test:unit && npm run test:pages && npm run test:e2e",
+    "test:unit": "web-test-runner \"tests/core/**/*.test.js\" \"tests/web-socket/**/*.test.js\" --node-resolve --static-logging",
+    "test:pages": "node --test tests/pages/*.test.js",
+    "test:e2e": "playwright test",
+    "pages:stage": "node scripts/stage-pages.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@web/test-runner": "1.0.0",
+    "ws": "8.21.3"
+  }
+}

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebSocket Worker example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="web-socket-worker">
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main">
+        <header class="hero">
+          <p class="eyebrow">WebSocket · Worker</p>
+          <h1>Same tag.<br />Background transport.</h1>
+          <p class="hero-copy">
+            The background flag moves native WebSocket and reconnect work into a
+            dedicated module Worker without changing the methods or events below.
+          </p>
+        </header>
+
+        <div class="example-layout">
+          <section class="panel" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Live controls</h2>
+            <div class="field-grid">
+              <div class="field">
+                <label for="endpoint">Endpoint</label>
+                <input id="endpoint" value="wss://echo.websocket.org" />
+                <p class="field-help">Use a ws:// or wss:// WebSocket endpoint.</p>
+              </div>
+              <div class="field">
+                <label for="message">Message</label>
+                <input id="message" value="hello from extended-html" />
+                <p class="field-help">Structured-cloned without a transfer list.</p>
+              </div>
+            </div>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">state: <strong data-testid="connection-state">Idle</strong></span>
+              <span class="status-pill">transport: <strong data-testid="transport">worker</strong></span>
+            </div>
+            <div class="socket-actions">
+              <button class="primary" id="open" type="button">Open connection</button>
+              <button id="send" type="button">Send message</button>
+              <button id="close" type="button">Close connection</button>
+              <button id="remove" type="button">Remove element</button>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="events-heading">
+            <h2 id="events-heading">Event log</h2>
+            <ol class="event-log" data-testid="event-log" aria-live="polite"></ol>
+          </section>
+
+          <section class="panel" aria-labelledby="markup-heading">
+            <h2 id="markup-heading">Markup</h2>
+            <pre class="code-sample"><code>&lt;web-socket
+  background
+  url="wss://echo.websocket.org"
+  onopen="OnOpen(event)"
+  onmessage="OnMessage(event)"
+&gt;&lt;/web-socket&gt;</code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <web-socket
+      id="socket"
+      background
+      url="wss://echo.websocket.org"
+      onopen="OnOpen(event)"
+      onmessage="OnMessage(event)"
+    ></web-socket>
+    <script type="module" src="../../src/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/web-socket-example.js"></script>
+  </body>
+</html>
