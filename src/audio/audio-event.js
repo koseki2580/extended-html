@@ -30,8 +30,13 @@ export class AudioEventTargetElement extends HTMLElement {
   }
 
   attributeChangedCallback(name, _oldValue, newValue) {
-    if (name.startsWith("on")) {
+    if (!name.startsWith("on")) return;
+    try {
       this._updateDeclarativeAudioHandler(name, newValue);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    } finally {
+      this.#clearNativeInlineHandler(name);
     }
   }
 
@@ -82,8 +87,8 @@ export class AudioEventTargetElement extends HTMLElement {
     const priorValue = ownDescriptor?.value;
     if (ownDescriptor && !delete this[propertyName]) return;
 
-    const inheritedDescriptor = this.#findInheritedPropertyDescriptor(propertyName);
-    if (!inheritedDescriptor) {
+    const subclassDescriptor = this.#findSubclassPropertyDescriptor(propertyName);
+    if (!subclassDescriptor) {
       Object.defineProperty(this, propertyName, {
         configurable: true,
         get: () => this.#audioEventHandlers.get(type)?.handler ?? null,
@@ -91,19 +96,31 @@ export class AudioEventTargetElement extends HTMLElement {
       });
     }
 
-    if (ownDescriptor && this.#canAssign(inheritedDescriptor)) {
+    if (ownDescriptor && this.#canAssign(subclassDescriptor)) {
       this[propertyName] = priorValue;
     }
   }
 
-  #findInheritedPropertyDescriptor(propertyName) {
+  #findSubclassPropertyDescriptor(propertyName) {
     let prototype = Object.getPrototypeOf(this);
-    while (prototype) {
+    while (prototype && prototype !== AudioEventTargetElement.prototype) {
       const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
       if (descriptor) return descriptor;
       prototype = Object.getPrototypeOf(prototype);
     }
     return null;
+  }
+
+  #clearNativeInlineHandler(propertyName) {
+    let prototype = Object.getPrototypeOf(AudioEventTargetElement.prototype);
+    while (prototype) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
+      if (typeof descriptor?.set === "function") {
+        descriptor.set.call(this, null);
+        return;
+      }
+      prototype = Object.getPrototypeOf(prototype);
+    }
   }
 
   #canAssign(descriptor) {

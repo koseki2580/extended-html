@@ -31,11 +31,20 @@ class TestAudioEventTargetElement extends AudioEventTargetElement {
   static audioEventTypes = ["ready"];
 }
 
+class ErrorAudioEventTargetElement extends AudioEventTargetElement {
+  static observedAttributes = ["onerror"];
+  static audioEventTypes = ["error"];
+}
+
 if (!customElements.get("test-audio-event-target")) {
   customElements.define("test-audio-event-target", TestAudioEventTargetElement);
 }
+if (!customElements.get("test-audio-error-event-target")) {
+  customElements.define("test-audio-error-event-target", ErrorAudioEventTargetElement);
+}
 
 const createElement = () => document.createElement("test-audio-event-target");
+const createErrorElement = () => document.createElement("test-audio-error-event-target");
 
 describe("dispatchAudioEvent", () => {
   it("dispatches a non-bubbling, non-composed event with audio metadata", () => {
@@ -216,6 +225,49 @@ describe("AudioEventTargetElement handlers", () => {
       assertEqual(element.onready, null, "property reflects removed attribute");
     } finally {
       delete globalThis.AudioEventAttributeHandler;
+    }
+  });
+
+  it("runs a built-in error declarative handler exactly once", () => {
+    const element = createErrorElement();
+    let calls = 0;
+    globalThis.ReviewSafeErrorHandler = () => {
+      calls += 1;
+    };
+
+    try {
+      element.setAttribute("onerror", "ReviewSafeErrorHandler(event)");
+      element.dispatchEvent(new Event("error"));
+
+      assertEqual(calls, 1, "error handler runs through the declarative slot once");
+      assertEqual(
+        element.getAttribute("onerror"),
+        "ReviewSafeErrorHandler(event)",
+        "declarative attribute is preserved",
+      );
+    } finally {
+      delete globalThis.ReviewSafeErrorHandler;
+    }
+  });
+
+  it("does not execute arbitrary code from a built-in error attribute", () => {
+    const element = createErrorElement();
+    globalThis.reviewUnsafeErrorAttributeExecuted = false;
+
+    try {
+      element.setAttribute(
+        "onerror",
+        "globalThis.reviewUnsafeErrorAttributeExecuted = true",
+      );
+      element.dispatchEvent(new Event("error"));
+
+      assertEqual(
+        globalThis.reviewUnsafeErrorAttributeExecuted,
+        false,
+        "native inline code is never dispatched",
+      );
+    } finally {
+      delete globalThis.reviewUnsafeErrorAttributeExecuted;
     }
   });
 
