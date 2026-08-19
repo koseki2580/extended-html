@@ -138,6 +138,7 @@ describe("AudioSourceElement", () => {
     const element = createSourceElement();
 
     assertEqual(await element._activate(), undefined, "activate is a no-op");
+    assertEqual(await element._connected(), undefined, "connection hook is a no-op");
     assertEqual(await element._suspend(), undefined, "suspend is a no-op");
     assertEqual(await element._close(), undefined, "close is a no-op");
   });

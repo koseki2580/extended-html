@@ -74,6 +74,8 @@ export class AudioNodeElement extends AudioEventTargetElement {
 export class AudioSourceElement extends AudioNodeElement {
   async _activate() {}
 
+  async _connected() {}
+
   async _suspend() {}
 
   async _close() {}

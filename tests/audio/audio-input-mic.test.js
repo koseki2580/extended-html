@@ -75,7 +75,7 @@ const installMediaDevices = (getUserMedia) => {
 };
 
 describe("AudioInputMicElement", () => {
-  it("requests audio and creates its source only after acquisition succeeds", async () => {
+  it("defers open until the runtime reports that graph connections are ready", async () => {
     const element = createElement();
     element.id = "mic";
     element._setAudioOwner({ id: "audio" });
@@ -105,11 +105,16 @@ describe("AudioInputMicElement", () => {
 
       assertEqual(
         events.join(","),
-        'request:{"audio":true},create,open',
-        "acquisition lifecycle order",
+        'request:{"audio":true},create',
+        "acquisition readiness order",
       );
       assertEqual(context.nodes[0].stream, stream, "stream reaches source creation");
       assertEqual(element._getAudioNode(), context.nodes[0], "native source is attached");
+      assertEqual(opened, undefined, "open is not emitted before graph connection");
+
+      await element._connected();
+
+      assertEqual(events.at(-1), "open", "open follows the connection hook");
       assertEqual(opened.detail.data, stream, "open data");
       assertEqual(opened.detail.metadata.contextId, "audio", "open context metadata");
       assertEqual(opened.detail.metadata.nodeId, "mic", "open node metadata");
@@ -143,17 +148,89 @@ describe("AudioInputMicElement", () => {
       const secondActivation = element._activate(context);
       resolveStream(stream);
       await Promise.all([firstActivation, secondActivation]);
+      await element._connected();
       await element._suspend();
       assertEqual(first.enabled, false, "first track is disabled");
       assertEqual(second.enabled, false, "second track is disabled");
 
       await element._activate(context);
+      await element._connected();
 
       assertEqual(first.enabled, true, "first track is re-enabled");
       assertEqual(second.enabled, true, "second track is re-enabled");
       assertEqual(requests, 1, "live stream is not reacquired");
       assertEqual(context.nodes.length, 1, "source is created once");
       assertEqual(opens, 1, "open describes acquisition rather than every resume");
+    } finally {
+      restore();
+    }
+  });
+
+  it("shares pending close and cancels late acquisition before node creation", async () => {
+    const element = createElement();
+    const events = [];
+    const track = createTrack(events);
+    const stream = createStream([track]);
+    const context = createContext(events);
+    let resolveStream;
+    const restore = installMediaDevices(
+      () =>
+        new Promise((resolve) => {
+          resolveStream = resolve;
+        }),
+    );
+    let opens = 0;
+    let closes = 0;
+    element.addEventListener("open", () => {
+      opens += 1;
+      events.push("open");
+    });
+    element.addEventListener("close", (event) => {
+      closes += 1;
+      events.push("close");
+      assertEqual(event.detail.data, stream, "late stream is close data");
+    });
+
+    try {
+      const activationResult = element._activate(context).catch((error) => error);
+      const firstClose = element._close();
+      const secondClose = element._close();
+      let firstResolved = false;
+      let secondResolved = false;
+      firstClose.then(() => {
+        firstResolved = true;
+        events.push("first-resolved");
+      });
+      secondClose.then(() => {
+        secondResolved = true;
+        events.push("second-resolved");
+      });
+
+      assertEqual(firstClose, secondClose, "close callers share one promise");
+      await Promise.resolve();
+      assertEqual(firstResolved, false, "first close waits for acquisition");
+      assertEqual(secondResolved, false, "second close waits for acquisition");
+
+      resolveStream(stream);
+      const activationError = await activationResult;
+      await Promise.all([firstClose, secondClose]);
+
+      assertEqual(activationError.name, "InvalidStateError", "activation is cancelled");
+      assertEqual(activationError.message, "Microphone input is closed", "cancel message");
+      assertEqual(context.nodes.length, 0, "late stream never creates a native node");
+      assertEqual(opens, 0, "late stream never emits open");
+      assertEqual(closes, 1, "terminal close is emitted once");
+      assertEqual(
+        events.join(","),
+        "stop:track,close,first-resolved,second-resolved",
+        "all close callers resolve after cleanup and event dispatch",
+      );
+      await assertRejects(
+        Promise.resolve().then(() => element._getAudioNode()),
+        DOMException,
+        "InvalidStateError",
+        "Audio node is not attached",
+      );
     } finally {
       restore();
     }
