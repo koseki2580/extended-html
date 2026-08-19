@@ -170,6 +170,37 @@ describe("AudioEventTargetElement handlers", () => {
     assert(typeof element.onready === "function", "generated accessor exposes hydrated handler");
   });
 
+  it("hydrates and clears a pre-upgrade native error handler through the custom property slot", () => {
+    const tagName = "test-audio-error-event-upgrade";
+    const element = document.createElement(tagName);
+    let oldCalls = 0;
+    let newCalls = 0;
+    const oldHandler = () => {
+      oldCalls += 1;
+    };
+    const newHandler = () => {
+      newCalls += 1;
+    };
+    element.onerror = oldHandler;
+    document.body.append(element);
+
+    class UpgradedErrorAudioEventTargetElement extends AudioEventTargetElement {
+      static audioEventTypes = ["error"];
+    }
+
+    customElements.define(tagName, UpgradedErrorAudioEventTargetElement);
+    assertEqual(element.onerror, oldHandler, "native handler is hydrated into the custom slot");
+    element.dispatchEvent(new Event("error"));
+    element.onerror = newHandler;
+    element.dispatchEvent(new Event("error"));
+    element.onerror = null;
+    element.dispatchEvent(new Event("error"));
+    element.remove();
+
+    assertEqual(oldCalls, 1, "old native handler runs only before replacement");
+    assertEqual(newCalls, 1, "new handler runs only before clearing");
+  });
+
   it("binds global and one-segment dotted declarative handlers with the element as this", () => {
     const element = createElement();
     const calls = [];

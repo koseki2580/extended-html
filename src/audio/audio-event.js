@@ -88,6 +88,10 @@ export class AudioEventTargetElement extends HTMLElement {
     if (ownDescriptor && !delete this[propertyName]) return;
 
     const subclassDescriptor = this.#findSubclassPropertyDescriptor(propertyName);
+    const nativeHandler =
+      !ownDescriptor && !subclassDescriptor && !this.hasAttribute(propertyName)
+        ? this.#takeNativeInlineHandler(propertyName)
+        : null;
     if (!subclassDescriptor) {
       Object.defineProperty(this, propertyName, {
         configurable: true,
@@ -98,6 +102,8 @@ export class AudioEventTargetElement extends HTMLElement {
 
     if (ownDescriptor && this.#canAssign(subclassDescriptor)) {
       this[propertyName] = priorValue;
+    } else if (typeof nativeHandler === "function") {
+      this[propertyName] = nativeHandler;
     }
   }
 
@@ -112,15 +118,30 @@ export class AudioEventTargetElement extends HTMLElement {
   }
 
   #clearNativeInlineHandler(propertyName) {
+    const descriptor = this.#findNativeHandlerDescriptor(propertyName);
+    if (typeof descriptor?.set === "function") {
+      descriptor.set.call(this, null);
+    }
+  }
+
+  #takeNativeInlineHandler(propertyName) {
+    const descriptor = this.#findNativeHandlerDescriptor(propertyName);
+    if (typeof descriptor?.get !== "function" || typeof descriptor.set !== "function") {
+      return null;
+    }
+    const handler = descriptor.get.call(this);
+    descriptor.set.call(this, null);
+    return handler;
+  }
+
+  #findNativeHandlerDescriptor(propertyName) {
     let prototype = Object.getPrototypeOf(AudioEventTargetElement.prototype);
     while (prototype) {
       const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
-      if (typeof descriptor?.set === "function") {
-        descriptor.set.call(this, null);
-        return;
-      }
+      if (typeof descriptor?.set === "function") return descriptor;
       prototype = Object.getPrototypeOf(prototype);
     }
+    return null;
   }
 
   #canAssign(descriptor) {
