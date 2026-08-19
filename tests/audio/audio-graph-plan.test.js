@@ -34,6 +34,14 @@ const edgeLabels = (edges) =>
   edges.map(({ from, to }) => `${from.id || from.localName}->${to.id || to.localName}`);
 
 describe("buildAudioGraphPlan", () => {
+  it("requires an audio context root element", () => {
+    assertThrows(
+      () => buildAudioGraphPlan(document.createElement("div")),
+      "invalid planner root",
+      "buildAudioGraphPlan requires an <audio-context> element",
+    );
+  });
+
   it("plans a serial nested chain", () => {
     const context = contextFrom(`
       <audio-context>
