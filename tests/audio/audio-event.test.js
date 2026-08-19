@@ -244,6 +244,89 @@ describe("AudioEventTargetElement handlers", () => {
     assertEqual(newCalls, 1, "new handler runs only before clearing");
   });
 
+  it("hydrates a pre-upgrade onready expando through a private-field subclass accessor", async () => {
+    const tagName = "test-audio-subclass-ready-event-upgrade";
+    const element = document.createElement(tagName);
+    let oldCalls = 0;
+    let newCalls = 0;
+    const oldHandler = () => {
+      oldCalls += 1;
+    };
+    const newHandler = () => {
+      newCalls += 1;
+    };
+    element.onready = oldHandler;
+    document.body.append(element);
+
+    class UpgradedSubclassReadyAudioEventTargetElement extends AudioEventTargetElement {
+      static audioEventTypes = ["ready"];
+
+      #handler = null;
+
+      get onready() {
+        return this.#handler;
+      }
+
+      set onready(handler) {
+        this.#handler = typeof handler === "function" ? handler : null;
+        this._setAudioEventHandler("ready", handler);
+      }
+    }
+
+    customElements.define(tagName, UpgradedSubclassReadyAudioEventTargetElement);
+    await Promise.resolve();
+    assertEqual(element.onready, oldHandler, "subclass accessor receives expando handler");
+    element.dispatchEvent(new Event("ready"));
+    element.onready = newHandler;
+    element.dispatchEvent(new Event("ready"));
+    element.onready = null;
+    element.dispatchEvent(new Event("ready"));
+    element.remove();
+
+    assertEqual(oldCalls, 1, "old expando handler runs only before replacement");
+    assertEqual(newCalls, 1, "new handler runs only before clearing");
+  });
+
+  it("cancels deferred expando hydration when a private-field subclass handler changes", async () => {
+    const tagName = "test-audio-subclass-ready-handler-cancel";
+    const element = document.createElement(tagName);
+    let oldCalls = 0;
+    let newCalls = 0;
+    const oldHandler = () => {
+      oldCalls += 1;
+    };
+    const newHandler = () => {
+      newCalls += 1;
+    };
+    element.onready = oldHandler;
+    document.body.append(element);
+
+    class CancelingSubclassReadyAudioEventTargetElement extends AudioEventTargetElement {
+      static audioEventTypes = ["ready"];
+
+      #handler = null;
+
+      get onready() {
+        return this.#handler;
+      }
+
+      set onready(handler) {
+        this.#handler = typeof handler === "function" ? handler : null;
+        this._setAudioEventHandler("ready", handler);
+      }
+    }
+
+    customElements.define(tagName, CancelingSubclassReadyAudioEventTargetElement);
+    element.onready = newHandler;
+    element.onready = null;
+    await Promise.resolve();
+    element.dispatchEvent(new Event("ready"));
+    element.remove();
+
+    assertEqual(oldCalls, 0, "pending expando handler is cancelled");
+    assertEqual(newCalls, 0, "cleared replacement handler does not run");
+  });
+
   it("binds global and one-segment dotted declarative handlers with the element as this", () => {
     const element = createElement();
     const calls = [];

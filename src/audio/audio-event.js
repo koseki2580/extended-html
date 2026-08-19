@@ -103,10 +103,14 @@ export class AudioEventTargetElement extends HTMLElement {
     }
 
     if (ownDescriptor && this.#canAssign(subclassDescriptor)) {
-      this[propertyName] = priorValue;
+      if (subclassDescriptor) {
+        this.#deferSubclassValue(type, propertyName, priorValue);
+      } else {
+        this[propertyName] = priorValue;
+      }
     } else if (typeof nativeHandler === "function") {
       if (subclassDescriptor) {
-        this.#deferSubclassHandler(type, propertyName, nativeHandler);
+        this.#deferSubclassValue(type, propertyName, nativeHandler);
       } else {
         this[propertyName] = nativeHandler;
       }
@@ -123,12 +127,17 @@ export class AudioEventTargetElement extends HTMLElement {
     return null;
   }
 
-  #deferSubclassHandler(type, propertyName, handler) {
-    this.#pendingSubclassHandlers.set(type, handler);
+  #deferSubclassValue(type, propertyName, value) {
+    this.#pendingSubclassHandlers.set(type, value);
     queueMicrotask(() => {
-      if (this.#pendingSubclassHandlers.get(type) !== handler) return;
+      if (
+        !this.#pendingSubclassHandlers.has(type) ||
+        this.#pendingSubclassHandlers.get(type) !== value
+      ) {
+        return;
+      }
       this.#pendingSubclassHandlers.delete(type);
-      this[propertyName] = handler;
+      this[propertyName] = value;
     });
   }
 
