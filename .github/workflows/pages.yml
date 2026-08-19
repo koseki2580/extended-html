@@ -32,8 +32,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Install Chrome for Playwright
-        run: npx playwright install --with-deps chrome
       - name: Test
         run: npm test
       - name: Stage public files
