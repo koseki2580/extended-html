@@ -11,11 +11,18 @@ const assertEqual = (actual, expected, message) => {
   );
 };
 
-const assertThrows = (callback, message, expectedMessage) => {
+const assertThrows = (
+  callback,
+  message,
+  ErrorType,
+  expectedName,
+  expectedMessage,
+) => {
   try {
     callback();
   } catch (error) {
-    assert(error instanceof TypeError, `${message}: expected a TypeError`);
+    assert(error instanceof ErrorType, `${message}: expected ${ErrorType.name}`);
+    assertEqual(error.name, expectedName, `${message}: error name`);
     assertEqual(error.message, expectedMessage, `${message}: error message`);
     return;
   }
@@ -38,6 +45,8 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(document.createElement("div")),
       "invalid planner root",
+      TypeError,
+      "TypeError",
       "buildAudioGraphPlan requires an <audio-context> element",
     );
   });
@@ -113,12 +122,24 @@ describe("buildAudioGraphPlan", () => {
     assertEqual(plan.edges.length, 0, "empty to adds no edge");
   });
 
+  it("accepts an empty to attribute on an audio output", () => {
+    const context = contextFrom(`
+      <audio-context><audio-input-mic id="mic"><audio-output id="out" to="  "></audio-output></audio-input-mic></audio-context>
+    `);
+
+    const plan = buildAudioGraphPlan(context);
+
+    assertEqual(edgeLabels(plan.edges).join(","), "mic->out", "empty output to adds no edge");
+  });
+
   it("rejects a processor at the context root", () => {
     const context = contextFrom("<audio-context><audio-biquad-filter></audio-biquad-filter></audio-context>");
 
     assertThrows(
       () => buildAudioGraphPlan(context),
       "root processor",
+      DOMException,
+      "SyntaxError",
       "<audio-biquad-filter> must be nested directly under a recognized audio node",
     );
   });
@@ -129,7 +150,37 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "wrapped source",
+      DOMException,
+      "SyntaxError",
       "<audio-input-mic> must be a direct child of <audio-context>",
+    );
+  });
+
+  it("rejects audio graph children under an audio output", () => {
+    const context = contextFrom(`
+      <audio-context><audio-input-mic><audio-output><audio-biquad-filter></audio-biquad-filter></audio-output></audio-input-mic></audio-context>
+    `);
+
+    assertThrows(
+      () => buildAudioGraphPlan(context),
+      "output child",
+      DOMException,
+      "SyntaxError",
+      "<audio-output> cannot contain audio graph elements",
+    );
+  });
+
+  it("rejects a non-empty to attribute on an audio output", () => {
+    const context = contextFrom(`
+      <audio-context><audio-input-file><audio-output to="target"></audio-output></audio-input-file><audio-input-mic><audio-biquad-filter id="target"></audio-biquad-filter></audio-input-mic></audio-context>
+    `);
+
+    assertThrows(
+      () => buildAudioGraphPlan(context),
+      "output to",
+      DOMException,
+      "SyntaxError",
+      "<audio-output> cannot declare a non-empty to attribute",
     );
   });
 
@@ -139,6 +190,8 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "missing target",
+      DOMException,
+      "SyntaxError",
       'Audio graph target "missing" was not found in this <audio-context>',
     );
   });
@@ -149,7 +202,23 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "duplicate id",
+      DOMException,
+      "SyntaxError",
       'Duplicate audio graph id "same" in this <audio-context>',
+    );
+  });
+
+  it("rejects a non-audio to target", () => {
+    const context = contextFrom(`
+      <audio-context><audio-input-file to="panel"></audio-input-file><div id="panel"></div></audio-context>
+    `);
+
+    assertThrows(
+      () => buildAudioGraphPlan(context),
+      "non-audio target",
+      DOMException,
+      "SyntaxError",
+      'Audio graph target "panel" must be an audio processor or output',
     );
   });
 
@@ -159,6 +228,8 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "source target",
+      DOMException,
+      "SyntaxError",
       'Audio graph target "mic" must be an audio processor or output',
     );
   });
@@ -169,6 +240,8 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "same tree target",
+      DOMException,
+      "SyntaxError",
       'Audio graph target "filter" must be in a different source tree',
     );
   });
@@ -183,6 +256,8 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(host.firstElementChild),
       "cross-context target",
+      DOMException,
+      "SyntaxError",
       'Audio graph target "foreign" was not found in this <audio-context>',
     );
   });
@@ -193,6 +268,8 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "unknown audio tag",
+      DOMException,
+      "SyntaxError",
       "Unknown audio graph element <audio-filter-typo>",
     );
   });
@@ -208,7 +285,31 @@ describe("buildAudioGraphPlan", () => {
     assertThrows(
       () => buildAudioGraphPlan(context),
       "cycle",
+      DOMException,
+      "InvalidStateError",
       "Audio graph contains a cycle",
     );
+  });
+
+  it("isolates nested audio contexts from each planner scope", () => {
+    const host = document.createElement("div");
+    host.innerHTML = `
+      <audio-context>
+        <audio-input-mic id="shared"></audio-input-mic>
+        <audio-context>
+          <audio-input-file id="shared"><audio-output id="inner-out"></audio-output></audio-input-file>
+          <audio-context><audio-filter-typo id="shared"></audio-filter-typo></audio-context>
+        </audio-context>
+      </audio-context>
+    `;
+    const outer = host.firstElementChild;
+    const inner = outer.querySelector(":scope > audio-context");
+
+    const outerPlan = buildAudioGraphPlan(outer);
+    const innerPlan = buildAudioGraphPlan(inner);
+
+    assertEqual(labels(outerPlan.nodes).join(","), "shared", "outer ignores the nested context subtree");
+    assertEqual(labels(innerPlan.nodes).join(","), "shared,inner-out", "inner owns its direct graph nodes");
+    assertEqual(edgeLabels(innerPlan.edges).join(","), "shared->inner-out", "inner owns its graph edges");
   });
 });

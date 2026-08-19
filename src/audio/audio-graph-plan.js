@@ -7,6 +7,8 @@ const ROLES = new Map([
 
 const isAudioTag = (element) => element.localName.startsWith("audio-");
 
+const syntaxError = (message) => new DOMException(message, "SyntaxError");
+
 const scopedElements = (contextElement) => {
   const elements = [];
   const visit = (parent) => {
@@ -34,7 +36,9 @@ const assertAcyclic = (nodes, edges) => {
   const visiting = new Set();
   const visited = new Set();
   const visit = (element) => {
-    if (visiting.has(element)) throw new TypeError("Audio graph contains a cycle");
+    if (visiting.has(element)) {
+      throw new DOMException("Audio graph contains a cycle", "InvalidStateError");
+    }
     if (visited.has(element)) return;
     visiting.add(element);
     for (const target of outgoing.get(element)) visit(target);
@@ -56,7 +60,7 @@ export const buildAudioGraphPlan = (contextElement) => {
   for (const element of elements) {
     if (element.id) {
       if (ids.has(element.id)) {
-        throw new TypeError(
+        throw syntaxError(
           `Duplicate audio graph id "${element.id}" in this <audio-context>`,
         );
       }
@@ -65,7 +69,7 @@ export const buildAudioGraphPlan = (contextElement) => {
     if (!isAudioTag(element)) continue;
     const role = ROLES.get(element.localName);
     if (!role) {
-      throw new TypeError(`Unknown audio graph element <${element.localName}>`);
+      throw syntaxError(`Unknown audio graph element <${element.localName}>`);
     }
     nodes.push({ element, role, rootSource: null, nodeIndex: nodes.length });
   }
@@ -73,9 +77,15 @@ export const buildAudioGraphPlan = (contextElement) => {
   const nodeFor = new Map(nodes.map((node) => [node.element, node]));
   for (const node of nodes) {
     const parentNode = nodeFor.get(node.element.parentElement);
+    if (node.role === "output" && node.element.getAttribute("to")?.trim()) {
+      throw syntaxError("<audio-output> cannot declare a non-empty to attribute");
+    }
+    if (parentNode?.role === "output") {
+      throw syntaxError("<audio-output> cannot contain audio graph elements");
+    }
     if (node.role === "source") {
       if (node.element.parentElement !== contextElement) {
-        throw new TypeError(
+        throw syntaxError(
           `<${node.element.localName}> must be a direct child of <audio-context>`,
         );
       }
@@ -83,7 +93,7 @@ export const buildAudioGraphPlan = (contextElement) => {
       continue;
     }
     if (!parentNode) {
-      throw new TypeError(
+      throw syntaxError(
         `<${node.element.localName}> must be nested directly under a recognized audio node`,
       );
     }
@@ -103,18 +113,18 @@ export const buildAudioGraphPlan = (contextElement) => {
       if (!targetId) continue;
       const targetElement = ids.get(targetId);
       if (!targetElement) {
-        throw new TypeError(
+        throw syntaxError(
           `Audio graph target "${targetId}" was not found in this <audio-context>`,
         );
       }
       const target = nodeFor.get(targetElement);
       if (!target || !["processor", "output"].includes(target.role)) {
-        throw new TypeError(
+        throw syntaxError(
           `Audio graph target "${targetId}" must be an audio processor or output`,
         );
       }
       if (target.rootSource === node.rootSource) {
-        throw new TypeError(
+        throw syntaxError(
           `Audio graph target "${targetId}" must be in a different source tree`,
         );
       }
