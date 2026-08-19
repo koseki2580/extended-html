@@ -5,3 +5,4 @@ playwright-report/
 test-results/
 agents/tasks/active/
 agents/human/
+.superpowers/
