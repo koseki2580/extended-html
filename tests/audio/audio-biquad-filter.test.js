@@ -90,6 +90,25 @@ describe("AudioBiquadFilterElement", () => {
     assertEqual(native.gain.value, -3, "live gain");
   });
 
+  it("keeps native values unchanged when live attributes are invalid", () => {
+    const element = createElement();
+    const native = createNativeFilter();
+    element._createAudioNode({ createBiquadFilter: () => native });
+
+    element.setAttribute("type", "not-a-filter");
+    element.setAttribute("frequency", "12px");
+
+    assertEqual(element.getAttribute("type"), "not-a-filter", "candidate type remains in DOM");
+    assertEqual(element.getAttribute("frequency"), "12px", "candidate value remains in DOM");
+    assertEqual(native.type, "lowpass", "native type remains valid");
+    assertEqual(native.frequency.value, 350, "native parameter remains valid");
+    assertThrows(
+      () => element._configureAudioNode(),
+      "SyntaxError",
+      'Unsupported Biquad filter type "not-a-filter"',
+    );
+  });
+
   it("restores standard defaults when live configuration attributes are removed", () => {
     const element = createElement();
     const native = createNativeFilter();
@@ -133,5 +152,20 @@ describe("AudioBiquadFilterElement", () => {
         `Biquad frequency must be a finite number, received "${value}"`,
       );
     }
+  });
+
+  it("rejects reuse with a different native context", () => {
+    const element = createElement();
+    const firstNode = createNativeFilter();
+    const firstContext = { createBiquadFilter: () => firstNode };
+    const secondContext = { createBiquadFilter: createNativeFilter };
+
+    assertEqual(element._createAudioNode(firstContext), firstNode, "first context node");
+    assertEqual(element._createAudioNode(firstContext), firstNode, "same context reuses node");
+    assertThrows(
+      () => element._createAudioNode(secondContext),
+      "InvalidStateError",
+      "Biquad filter already belongs to a different AudioContext",
+    );
   });
 });

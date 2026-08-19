@@ -11,6 +11,17 @@ const assertEqual = (actual, expected, message) => {
   );
 };
 
+const assertThrows = (callback, name, message) => {
+  try {
+    callback();
+  } catch (error) {
+    assertEqual(error.name, name, "error name");
+    assertEqual(error.message, message, "error message");
+    return;
+  }
+  throw new Error("expected an error");
+};
+
 if (!customElements.get("test-audio-input-file")) {
   customElements.define("test-audio-input-file", AudioInputFileElement);
 }
@@ -131,5 +142,44 @@ describe("AudioInputFileElement", () => {
     assertEqual(element._createAudioNode(context), source, "first source");
     assertEqual(element._createAudioNode(context), source, "cached source");
     assertEqual(creations, 1, "native source is created once");
+  });
+
+  it("rejects reuse with a different native context", () => {
+    const element = createElement();
+    const firstSource = {};
+    const firstContext = { createMediaElementSource: () => firstSource };
+    let secondCreations = 0;
+    const secondContext = {
+      createMediaElementSource() {
+        secondCreations += 1;
+        return {};
+      },
+    };
+
+    assertEqual(element._createAudioNode(firstContext), firstSource, "first context source");
+    assertThrows(
+      () => element._createAudioNode(secondContext),
+      "InvalidStateError",
+      "File input already belongs to a different AudioContext",
+    );
+    assertEqual(secondCreations, 0, "second context never receives the media element");
+  });
+
+  it("guards the native one-media-source constraint across real AudioContexts", async () => {
+    const element = createElement();
+    const firstContext = new AudioContext();
+    const secondContext = new AudioContext();
+
+    try {
+      const source = element._createAudioNode(firstContext);
+      assertEqual(element._createAudioNode(firstContext), source, "native source is reused");
+      assertThrows(
+        () => element._createAudioNode(secondContext),
+        "InvalidStateError",
+        "File input already belongs to a different AudioContext",
+      );
+    } finally {
+      await Promise.all([firstContext.close(), secondContext.close()]);
+    }
   });
 });

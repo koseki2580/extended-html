@@ -40,7 +40,8 @@ export class AudioInputFileElement extends AudioSourceElement {
   ];
 
   #mediaElement;
-  #sourceNodes = new WeakMap();
+  #nativeContext = null;
+  #sourceNode = null;
 
   constructor() {
     super();
@@ -168,11 +169,19 @@ export class AudioInputFileElement extends AudioSourceElement {
   }
 
   _createAudioNode(context) {
-    let sourceNode = this.#sourceNodes.get(context);
-    if (!sourceNode) {
-      sourceNode = context.createMediaElementSource(this.#mediaElement);
-      this.#sourceNodes.set(context, sourceNode);
+    if (this.#sourceNode !== null) {
+      if (context !== this.#nativeContext) {
+        throw new DOMException(
+          "File input already belongs to a different AudioContext",
+          "InvalidStateError",
+        );
+      }
+      return this.#sourceNode;
     }
+
+    const sourceNode = context.createMediaElementSource(this.#mediaElement);
+    this.#nativeContext = context;
+    this.#sourceNode = sourceNode;
     return sourceNode;
   }
 

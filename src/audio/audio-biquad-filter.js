@@ -28,6 +28,11 @@ const DEFAULT_VALUES = new Map([
 const FINITE_NUMBER_PATTERN = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
 const syntaxError = (message) => new DOMException(message, "SyntaxError");
+const contextMismatchError = () =>
+  new DOMException(
+    "Biquad filter already belongs to a different AudioContext",
+    "InvalidStateError",
+  );
 
 const parseFiniteNumber = (name, value) => {
   if (!FINITE_NUMBER_PATTERN.test(value.trim())) {
@@ -51,19 +56,28 @@ export class AudioBiquadFilterElement extends AudioNodeElement {
   static observedAttributes = ["type", ...PARAMETER_ATTRIBUTES.keys()];
 
   #filterNode = null;
+  #nativeContext = null;
 
   attributeChangedCallback(name, oldValue, newValue) {
     super.attributeChangedCallback(name, oldValue, newValue);
     if (oldValue === newValue || this.#filterNode === null) return;
 
     if (name === "type") {
-      this.#filterNode.type = newValue === null ? "lowpass" : validateType(newValue);
+      try {
+        this.#filterNode.type = newValue === null ? "lowpass" : validateType(newValue);
+      } catch (error) {
+        if (error.name !== "SyntaxError") throw error;
+      }
       return;
     }
     const parameterName = PARAMETER_ATTRIBUTES.get(name);
     if (parameterName) {
-      this.#filterNode[parameterName].value =
-        newValue === null ? DEFAULT_VALUES.get(name) : parseFiniteNumber(name, newValue);
+      try {
+        this.#filterNode[parameterName].value =
+          newValue === null ? DEFAULT_VALUES.get(name) : parseFiniteNumber(name, newValue);
+      } catch (error) {
+        if (error.name !== "SyntaxError") throw error;
+      }
     }
   }
 
@@ -92,12 +106,16 @@ export class AudioBiquadFilterElement extends AudioNodeElement {
   }
 
   _createAudioNode(context) {
-    if (this.#filterNode !== null) return this.#filterNode;
+    if (this.#filterNode !== null) {
+      if (context !== this.#nativeContext) throw contextMismatchError();
+      return this.#filterNode;
+    }
 
     const configuration = this.#readConfiguration();
     const filterNode = context.createBiquadFilter();
-    this.#filterNode = filterNode;
     this._configureAudioNode(filterNode, configuration);
+    this.#nativeContext = context;
+    this.#filterNode = filterNode;
     return filterNode;
   }
 
