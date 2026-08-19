@@ -9,7 +9,7 @@ export const dispatchAudioEvent = (element, type, data, owner) =>
       detail: {
         data,
         metadata: {
-          contextId: owner?.id ?? null,
+          contextId: owner?.id || null,
           nodeId: element.id || null,
           nodeName: element.localName,
         },
@@ -39,12 +39,13 @@ export class AudioEventTargetElement extends HTMLElement {
     this.#defineHandlerProperty(type);
 
     const current = this.#audioEventHandlers.get(type);
-    if (current) this.removeEventListener(type, current);
+    if (current) this.removeEventListener(type, current.listener);
     this.#audioEventHandlers.delete(type);
 
     if (typeof handler === "function") {
-      this.#audioEventHandlers.set(type, handler);
-      this.addEventListener(type, handler);
+      const listener = (event) => handler.call(this, event);
+      this.#audioEventHandlers.set(type, { handler, listener });
+      this.addEventListener(type, listener);
     }
   }
 
@@ -75,11 +76,37 @@ export class AudioEventTargetElement extends HTMLElement {
 
   #defineHandlerProperty(type) {
     const propertyName = `on${type}`;
-    if (Object.hasOwn(this, propertyName)) return;
-    Object.defineProperty(this, propertyName, {
-      configurable: true,
-      get: () => this.#audioEventHandlers.get(type) ?? null,
-      set: (handler) => this._setAudioEventHandler(type, handler),
-    });
+    const ownDescriptor = Object.getOwnPropertyDescriptor(this, propertyName);
+    if (ownDescriptor && !("value" in ownDescriptor)) return;
+
+    const priorValue = ownDescriptor?.value;
+    if (ownDescriptor && !delete this[propertyName]) return;
+
+    const inheritedDescriptor = this.#findInheritedPropertyDescriptor(propertyName);
+    if (!inheritedDescriptor) {
+      Object.defineProperty(this, propertyName, {
+        configurable: true,
+        get: () => this.#audioEventHandlers.get(type)?.handler ?? null,
+        set: (handler) => this._setAudioEventHandler(type, handler),
+      });
+    }
+
+    if (ownDescriptor && this.#canAssign(inheritedDescriptor)) {
+      this[propertyName] = priorValue;
+    }
+  }
+
+  #findInheritedPropertyDescriptor(propertyName) {
+    let prototype = Object.getPrototypeOf(this);
+    while (prototype) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
+      if (descriptor) return descriptor;
+      prototype = Object.getPrototypeOf(prototype);
+    }
+    return null;
+  }
+
+  #canAssign(descriptor) {
+    return !descriptor || descriptor.writable || typeof descriptor.set === "function";
   }
 }

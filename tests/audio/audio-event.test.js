@@ -76,6 +76,18 @@ describe("dispatchAudioEvent", () => {
     assertEqual(received.detail.metadata.contextId, null, "missing context ID");
     assertEqual(received.detail.metadata.nodeId, null, "missing node ID");
   });
+
+  it("uses null context metadata when an owner has no ID", () => {
+    const element = createElement();
+    let received;
+    element.addEventListener("ready", (event) => {
+      received = event;
+    });
+
+    dispatchAudioEvent(element, "ready", undefined, { id: "" });
+
+    assertEqual(received.detail.metadata.contextId, null, "empty owner ID is absent");
+  });
 });
 
 describe("AudioEventTargetElement handlers", () => {
@@ -109,6 +121,44 @@ describe("AudioEventTargetElement handlers", () => {
     element.onready = "not a function";
 
     assertEqual(element.onready, null, "non-function clears handler");
+  });
+
+  it("keeps an independently registered handler when the matching property handler clears", () => {
+    const element = createElement();
+    let calls = 0;
+    const handler = () => {
+      calls += 1;
+    };
+
+    element.addEventListener("ready", handler);
+    element.onready = handler;
+    element.dispatchEvent(new Event("ready"));
+    element.onready = null;
+    element.dispatchEvent(new Event("ready"));
+    element.removeEventListener("ready", handler);
+
+    assertEqual(calls, 3, "property listener does not share the native listener slot");
+  });
+
+  it("hydrates a pre-upgrade onready expando through the declared property accessor", () => {
+    const tagName = "test-audio-event-upgrade";
+    const element = document.createElement(tagName);
+    let calls = 0;
+    element.onready = () => {
+      calls += 1;
+    };
+    document.body.append(element);
+
+    class UpgradedAudioEventTargetElement extends AudioEventTargetElement {
+      static audioEventTypes = ["ready"];
+    }
+
+    customElements.define(tagName, UpgradedAudioEventTargetElement);
+    element.dispatchEvent(new Event("ready"));
+    element.remove();
+
+    assertEqual(calls, 1, "pre-upgrade handler is subscribed after upgrade");
+    assert(typeof element.onready === "function", "generated accessor exposes hydrated handler");
   });
 
   it("binds global and one-segment dotted declarative handlers with the element as this", () => {

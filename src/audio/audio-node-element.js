@@ -17,7 +17,7 @@ export class AudioNodeElement extends AudioEventTargetElement {
   }
 
   _setAudioOwner(owner) {
-    if (owner === null) return;
+    if (owner === null || owner === undefined) return;
     if (owner === this.#audioOwner) return;
     if (this.#audioOwner !== null) {
       throw new DOMException(
@@ -37,6 +37,9 @@ export class AudioNodeElement extends AudioEventTargetElement {
   }
 
   _attachAudioNode(node) {
+    if (node === null || node === undefined) {
+      throw new TypeError("Audio node must not be null or undefined");
+    }
     if (node === this.#audioNode) return node;
     if (this.#audioNode !== null) {
       throw new DOMException(

@@ -68,6 +68,8 @@ describe("AudioNodeElement", () => {
     );
     element._setAudioOwner(null);
     assertEqual(element._getAudioOwner(), owner, "null assignment does not clear the owner");
+    element._setAudioOwner(undefined);
+    assertEqual(element._getAudioOwner(), owner, "undefined assignment does not change the owner");
     element._clearAudioOwner(otherOwner);
     assertEqual(element._getAudioOwner(), owner, "other owner cannot clear it");
     element._clearAudioOwner(owner);
@@ -85,6 +87,18 @@ describe("AudioNodeElement", () => {
       DOMException,
       "InvalidStateError",
       "Audio node is not attached",
+    );
+    assertThrows(
+      () => element._attachAudioNode(null),
+      TypeError,
+      "TypeError",
+      "Audio node must not be null or undefined",
+    );
+    assertThrows(
+      () => element._attachAudioNode(undefined),
+      TypeError,
+      "TypeError",
+      "Audio node must not be null or undefined",
     );
     element._attachAudioNode(node);
     element._attachAudioNode(node);
