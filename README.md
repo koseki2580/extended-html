@@ -1,18 +1,22 @@
-# custom-html
+# extended-html
 
-Browser JavaScript APIs exposed as build-free HTML custom elements.
+Use browser JavaScript APIs as build-free HTML custom elements.
 
-## WebSocket
+## Use `<web-socket>`
 
-Import the aggregate entry point and use `<web-socket>` directly in HTML:
+Import the aggregate entry point to register the available elements:
 
 ```html
 <script type="module">
   import "./src/index.js";
 </script>
+```
 
+Add a WebSocket connection to HTML and handle its wrapped events:
+
+```html
 <web-socket
-  url="wss://example.com/socket"
+  url="wss://echo.websocket.org"
   auto
   onmessage="OnMessage(event)"
 ></web-socket>
@@ -25,14 +29,7 @@ Import the aggregate entry point and use `<web-socket>` directly in HTML:
 </script>
 ```
 
-To register only this element:
-
-```js
-import "./src/web-socket/web-socket.js";
-```
-
-The element supports manual connection, transparent sending, close handling,
-and optional automatic reconnection:
+The same element can be controlled from JavaScript:
 
 ```js
 const socket = document.querySelector("web-socket");
@@ -42,55 +39,19 @@ socket.send("hello");
 socket.close();
 ```
 
-Run the same API in a dedicated module Worker by adding `background`:
+Add the `background` attribute to run the connection in a dedicated Worker
+without changing the methods or events:
 
 ```html
 <web-socket
-  url="wss://example.com/socket"
+  url="wss://echo.websocket.org"
   auto
   background
 ></web-socket>
 ```
 
-Worker startup failures are reported through `error` and do not silently change
-transport. Add `fallback` only when an explicit main-thread fallback is wanted:
+## Guides and examples
 
-```html
-<web-socket
-  url="wss://example.com/socket"
-  auto
-  background
-  fallback
-></web-socket>
-```
-
-All wrapped events expose the selected transport as
-`event.detail.metadata.transport`, while their original payload remains at
-`event.detail.data`.
-
-See the complete [`<web-socket>` API](docs/web-socket.md).
-
-Interactive main-thread and Worker examples are available under
-[`examples/`](examples/). The deployed site is
-[`koseki2580.github.io/extended-html`](https://koseki2580.github.io/extended-html/).
-
-## Development
-
-Requirements:
-
-- A supported Node.js release
-- A local Google Chrome installation
-
-Install the pinned development dependencies and run the unit, Pages-contract,
-and real WebSocket Playwright suites:
-
-```sh
-npm install
-npm test
-```
-
-Runtime source under `src/` has no third-party dependencies and requires no
-compilation.
-
-See [development and deployment](docs/development.md) for focused commands and
-the GitHub Pages artifact contract.
+- [English User Guide](https://koseki2580.github.io/extended-html/guide/en/)
+- [日本語ユーザーガイド](https://koseki2580.github.io/extended-html/guide/ja/)
+- [Interactive examples](https://koseki2580.github.io/extended-html/examples/)

@@ -20,19 +20,135 @@ const watchPageErrors = (page) => {
   return errors;
 };
 
-test("root opens the examples overview with sidebar navigation", async ({ page }) => {
+test("root offers both user guides and the interactive examples", async ({ page }) => {
   const errors = watchPageErrors(page);
   await page.goto(server.httpUrl);
 
-  await expect(page).toHaveURL(/\/examples\/$/);
-  await expect(page.getByRole("navigation", { name: "Examples" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "WebSocket: Main" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "WebSocket: Worker" })).toBeVisible();
-
-  await page.getByRole("link", { name: "WebSocket: Main" }).click();
-  await expect(page).toHaveURL(/\/examples\/web-socket\/$/);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole("heading", { name: "Choose your guide" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "English User Guide" })).toHaveAttribute(
+    "href",
+    "./guide/en/",
+  );
+  await expect(page.getByRole("link", { name: "日本語ユーザーガイド" })).toHaveAttribute(
+    "href",
+    "./guide/ja/",
+  );
+  await expect(page.getByRole("link", { name: "Interactive examples" })).toHaveAttribute(
+    "href",
+    "./examples/",
+  );
   expect(errors).toEqual([]);
 });
+
+const guideSections = [
+  "getting-started",
+  "connection",
+  "events",
+  "methods",
+  "worker",
+  "fallback",
+  "reconnect",
+  "api",
+  "examples",
+];
+
+for (const guide of [
+  {
+    language: "English",
+    path: "guide/en/",
+    lang: "en",
+    heading: "Use WebSocket from HTML",
+    translation: "日本語で読む",
+    translationPath: "../ja/",
+    examples: "Interactive examples",
+  },
+  {
+    language: "Japanese",
+    path: "guide/ja/",
+    lang: "ja",
+    heading: "WebSocketをHTMLで使う",
+    translation: "Read in English",
+    translationPath: "../en/",
+    examples: "動作するサンプル",
+  },
+]) {
+  test(`${guide.language} guide exposes the complete localized user journey`, async ({
+    page,
+  }) => {
+    const errors = watchPageErrors(page);
+    await page.goto(`${server.httpUrl}/${guide.path}`);
+
+    await expect(page.locator("html")).toHaveAttribute("lang", guide.lang);
+    await expect(page.getByRole("heading", { name: guide.heading })).toBeVisible();
+    await expect(page.getByRole("link", { name: guide.translation })).toHaveAttribute(
+      "href",
+      guide.translationPath,
+    );
+    await expect(
+      page
+        .getByRole("navigation", {
+          name: guide.lang === "en" ? "User Guide" : "ユーザーガイド",
+        })
+        .getByRole("link", { name: guide.examples }),
+    ).toHaveAttribute("href", "../../examples/");
+    for (const section of guideSections) {
+      await expect(page.locator(`#${section}`)).toBeVisible();
+    }
+    const apiReference = await page.locator("#api").innerText();
+    for (const apiName of [
+      "open()",
+      "send(data)",
+      "close()",
+      "onopen",
+      "onmessage",
+      "onerror",
+      "onclose",
+    ]) {
+      expect(apiReference).toContain(apiName);
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+test("examples link back to both localized user guides", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/`);
+
+  const navigation = page.getByRole("navigation", { name: "Examples" });
+  await expect(
+    navigation.getByRole("link", { name: "English User Guide" }),
+  ).toHaveAttribute("href", /\/guide\/en\/$/);
+  await expect(
+    navigation.getByRole("link", { name: "日本語ユーザーガイド" }),
+  ).toHaveAttribute("href", /\/guide\/ja\/$/);
+});
+
+for (const width of [375, 768, 1024, 1440]) {
+  test(`guide layout remains usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`${server.httpUrl}/guide/en/`);
+
+    await expect(page.getByRole("navigation", { name: "User Guide" })).toBeVisible();
+    const layout = await page.evaluate(() => ({
+      body: document.body.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+      undersizedLinks: [
+        ...document.querySelectorAll(
+          ".guide-navigation a, .language-link, .example-link",
+        ),
+      ]
+        .filter((link) => link.getBoundingClientRect().height < 44)
+        .map((link) => ({
+          text: link.textContent.trim(),
+          height: link.getBoundingClientRect().height,
+        })),
+    }));
+    expect(layout.body).toBeLessThanOrEqual(layout.viewport);
+    expect(layout.undersizedLinks).toEqual([]);
+  });
+}
 
 for (const example of [
   { name: "main", path: "web-socket/", transport: "main" },

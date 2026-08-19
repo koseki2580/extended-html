@@ -3,13 +3,49 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="refresh" content="0; url=./examples/" />
-    <title>extended-html examples</title>
+    <meta
+      name="description"
+      content="Choose an extended-html user guide or open the interactive examples."
+    />
+    <title>extended-html · User Guides</title>
+    <link rel="stylesheet" href="./guide/assets/guide.css" />
   </head>
-  <body>
-    <p><a href="./examples/">Open the extended-html examples</a></p>
-    <script>
-      location.replace(new URL("./examples/", location.href));
-    </script>
+  <body class="landing-page">
+    <main class="landing-shell">
+      <a class="brand" href="./" aria-label="extended-html home">
+        <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+        <span><strong>extended-html</strong><small>Browser APIs as HTML</small></span>
+      </a>
+
+      <header class="landing-hero">
+        <p class="eyebrow">Build-free custom elements</p>
+        <h1>Choose your guide</h1>
+        <p>
+          Learn how to use browser APIs through HTML, or open the live examples
+          and exercise the elements directly.
+        </p>
+      </header>
+
+      <div class="landing-grid">
+        <a class="destination-card primary-card" href="./guide/en/">
+          <span class="card-label">English</span>
+          <strong>English User Guide</strong>
+          <span>Start with WebSocket, then explore events and Worker transport.</span>
+          <b>Read the guide →</b>
+        </a>
+        <a class="destination-card" href="./guide/ja/" lang="ja">
+          <span class="card-label">日本語</span>
+          <strong>日本語ユーザーガイド</strong>
+          <span>WebSocketの基本からイベント、Workerまで解説します。</span>
+          <b>ガイドを読む →</b>
+        </a>
+        <a class="destination-card" href="./examples/">
+          <span class="card-label">Live</span>
+          <strong>Interactive examples</strong>
+          <span>Open real connections and inspect the wrapped events.</span>
+          <b>Run examples →</b>
+        </a>
+      </div>
+    </main>
   </body>
 </html>

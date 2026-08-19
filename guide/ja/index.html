@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="extended-htmlのweb-socketカスタムエレメントを使うための日本語ガイドです。"
+    />
+    <title>日本語ユーザーガイド · extended-html</title>
+    <link rel="alternate" hreflang="en" href="../en/" />
+    <link rel="stylesheet" href="../assets/guide.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#guide-content">本文へ移動</a>
+    <div class="guide-shell">
+      <aside class="guide-sidebar">
+        <nav class="guide-navigation" aria-label="ユーザーガイド">
+          <a class="brand" href="../../">
+            <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+            <span><strong>extended-html</strong><small>日本語ユーザーガイド</small></span>
+          </a>
+          <ul class="guide-links">
+            <li><a href="#getting-started">導入</a></li>
+            <li><a href="#connection">接続</a></li>
+            <li><a href="#events">イベント</a></li>
+            <li><a href="#methods">メソッド</a></li>
+            <li><a href="#worker">Worker</a></li>
+            <li><a href="#fallback">フォールバック</a></li>
+            <li><a href="#reconnect">再接続</a></li>
+            <li><a href="#api">API一覧</a></li>
+            <li><a href="#examples">サンプル</a></li>
+          </ul>
+          <div class="guide-footer">
+            <a class="language-link" href="../en/" lang="en">Read in English</a>
+            <a href="../../examples/">動作するサンプル</a>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="guide-main" id="guide-content">
+        <header class="guide-hero">
+          <p class="eyebrow">日本語ユーザーガイド</p>
+          <h1>WebSocketをHTMLで使う</h1>
+          <p class="guide-intro">
+            <code>&lt;web-socket&gt;</code>はブラウザのWebSocket APIをカスタムエレメントとして提供します。
+            標準JavaScriptモジュールだけで動作し、フレームワークやビルドは不要です。
+          </p>
+        </header>
+
+        <section class="guide-section" id="getting-started">
+          <p class="eyebrow">01 · 導入</p>
+          <h2>カスタムエレメントを登録する</h2>
+          <p>
+            集約エントリーポイントを一度importすると、リポジトリが提供するすべてのカスタムエレメントが登録されます。
+          </p>
+          <pre class="code-block"><code>&lt;script type="module"&gt;
+  import "../../src/index.js";
+&lt;/script&gt;</code></pre>
+          <p>
+            WebSocketだけを登録する場合は、代わりに
+            <code>src/web-socket/web-socket.js</code>をimportします。
+          </p>
+        </section>
+
+        <section class="guide-section" id="connection">
+          <p class="eyebrow">02 · 接続</p>
+          <h2>自動または手動で接続を開く</h2>
+          <p>
+            <code>auto</code>を付けると、要素がDOMへ追加された時点で接続します。
+            付けない場合は要素を取得して、必要なタイミングで<code>open()</code>を呼びます。
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  id="socket"
+  url="wss://echo.websocket.org"
+  auto
+&gt;&lt;/web-socket&gt;</code></pre>
+          <pre class="code-block"><code>const socket = document.querySelector("#socket");
+socket.open();</code></pre>
+          <div class="note">
+            要素をDOMから削除すると、再接続処理を停止し、開いている接続を閉じます。
+          </div>
+        </section>
+
+        <section class="guide-section" id="events">
+          <p class="eyebrow">03 · イベント</p>
+          <h2><code>event.detail</code>からデータを読む</h2>
+          <p>
+            ネイティブの<code>open</code>、<code>message</code>、<code>error</code>、
+            <code>close</code>は、同じ名前の<code>CustomEvent</code>として要素から通知されます。
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  onopen="OnOpen(event)"
+  onmessage="OnMessage(event)"
+&gt;&lt;/web-socket&gt;
+
+&lt;script&gt;
+  function OnMessage(event) {
+    console.log(event.detail.data);
+    console.log(event.detail.metadata.transport);
+  }
+&lt;/script&gt;</code></pre>
+          <p>
+            transport metadataは常に<code>"main"</code>または<code>"worker"</code>です。
+            イベントプロパティや<code>addEventListener()</code>も利用できます。
+          </p>
+        </section>
+
+        <section class="guide-section" id="methods">
+          <p class="eyebrow">04 · メソッド</p>
+          <h2>JavaScriptから同じ要素を操作する</h2>
+          <pre class="code-block"><code>const socket = document.querySelector("web-socket");
+
+socket.open();
+socket.send("hello");
+socket.close();</code></pre>
+          <p>
+            <code>send(data)</code>はWebSocketが対応するデータを変更せず送信します。
+            接続前に呼ぶと<code>InvalidStateError</code>になります。
+            接続中または接続済みの<code>open()</code>は何もしません。
+          </p>
+        </section>
+
+        <section class="guide-section" id="worker">
+          <p class="eyebrow">05 · Worker transport</p>
+          <h2>接続処理をWorkerへ移す</h2>
+          <p>
+            <code>background</code>を付けると、接続、送信、切断、再接続を専用module Worker内で実行します。
+            公開メソッドとイベントの使い方は変わりません。
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  auto
+  background
+&gt;&lt;/web-socket&gt;</code></pre>
+          <p>
+            Worker modeはtransfer listを使わずstructured cloneするため、呼び出し元の
+            <code>ArrayBuffer</code>はdetachされません。
+          </p>
+        </section>
+
+        <section class="guide-section" id="fallback">
+          <p class="eyebrow">06 · フォールバック</p>
+          <h2>main threadへの切替を明示する</h2>
+          <p>
+            Worker起動失敗は<code>error</code>で通知され、暗黙にはtransportを変更しません。
+            main threadへの切替を許可する場合だけ<code>fallback</code>を追加します。
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  background
+  fallback
+&gt;&lt;/web-socket&gt;</code></pre>
+          <p>
+            フォールバックはWorkerがreadyになる前の失敗だけが対象です。
+            実行中のWorker障害では自動的にtransportを変更しません。
+          </p>
+        </section>
+
+        <section class="guide-section" id="reconnect">
+          <p class="eyebrow">07 · 再接続</p>
+          <h2>リモート切断から再接続する</h2>
+          <p>
+            <code>reconnect</code>を付けるとリモート切断後に再接続します。
+            明示的な<code>close()</code>とDOMからの削除では再接続しません。
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  auto
+  reconnect
+  reconnect-delay="2500"
+&gt;&lt;/web-socket&gt;</code></pre>
+          <p>
+            <code>reconnect-delay</code>がない場合は1、2、4、8、16、30秒のexponential backoffを使い、
+            以後は30秒が上限です。
+          </p>
+        </section>
+
+        <section class="guide-section" id="api">
+          <p class="eyebrow">08 · API一覧</p>
+          <h2>属性、メソッド、イベント</h2>
+          <table class="reference-table">
+            <thead><tr><th>属性</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td><code>url</code></td><td>ネイティブWebSocketへ渡すendpointです。</td></tr>
+              <tr><td><code>auto</code></td><td>DOMへ接続された時点でopenします。</td></tr>
+              <tr><td><code>background</code></td><td>専用Worker transportを使います。</td></tr>
+              <tr><td><code>fallback</code></td><td>Worker起動失敗時にmain transportを許可します。</td></tr>
+              <tr><td><code>reconnect</code></td><td>手動ではない切断後に再接続します。</td></tr>
+              <tr><td><code>reconnect-delay</code></td><td>0以上の固定再接続待機時間をミリ秒で指定します。</td></tr>
+              <tr><td><code>onopen</code>、<code>onmessage</code>、<code>onerror</code>、<code>onclose</code></td><td><code>event</code>を渡してglobal handlerを呼びます。</td></tr>
+            </tbody>
+          </table>
+          <table class="reference-table">
+            <thead><tr><th>メソッド</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td><code>open()</code></td><td>接続中または接続済みでなければ接続を開始します。</td></tr>
+              <tr><td><code>send(data)</code></td><td>WebSocketが対応する値を送信します。</td></tr>
+              <tr><td><code>close()</code></td><td>再接続を停止し、開いている接続を閉じます。</td></tr>
+            </tbody>
+          </table>
+          <table class="reference-table">
+            <thead><tr><th>イベント</th><th><code>event.detail.data</code></th></tr></thead>
+            <tbody>
+              <tr><td><code>open</code></td><td><code>{ url }</code></td></tr>
+              <tr><td><code>message</code></td><td>受信したテキストまたはバイナリ値です。</td></tr>
+              <tr><td><code>error</code></td><td>ネイティブまたはラップされたエラー値です。</td></tr>
+              <tr><td><code>close</code></td><td><code>{ code, reason, wasClean }</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="guide-section" id="examples">
+          <p class="eyebrow">09 · サンプル</p>
+          <h2>ブラウザで要素を試す</h2>
+          <p>
+            サンプルではendpointを編集し、接続操作、transport metadata、main/Workerそれぞれの
+            event logを確認できます。
+          </p>
+          <a class="example-link" href="../../examples/">動作するサンプル</a>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Learn how to use the extended-html web-socket custom element."
+    />
+    <title>English User Guide · extended-html</title>
+    <link rel="alternate" hreflang="ja" href="../ja/" />
+    <link rel="stylesheet" href="../assets/guide.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#guide-content">Skip to content</a>
+    <div class="guide-shell">
+      <aside class="guide-sidebar">
+        <nav class="guide-navigation" aria-label="User Guide">
+          <a class="brand" href="../../">
+            <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+            <span><strong>extended-html</strong><small>English User Guide</small></span>
+          </a>
+          <ul class="guide-links">
+            <li><a href="#getting-started">Getting started</a></li>
+            <li><a href="#connection">Connection</a></li>
+            <li><a href="#events">Events</a></li>
+            <li><a href="#methods">Methods</a></li>
+            <li><a href="#worker">Worker</a></li>
+            <li><a href="#fallback">Fallback</a></li>
+            <li><a href="#reconnect">Reconnect</a></li>
+            <li><a href="#api">API reference</a></li>
+            <li><a href="#examples">Examples</a></li>
+          </ul>
+          <div class="guide-footer">
+            <a class="language-link" href="../ja/" lang="ja">日本語で読む</a>
+            <a href="../../examples/">Interactive examples</a>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="guide-main" id="guide-content">
+        <header class="guide-hero">
+          <p class="eyebrow">English User Guide</p>
+          <h1>Use WebSocket from HTML</h1>
+          <p class="guide-intro">
+            <code>&lt;web-socket&gt;</code> exposes the browser WebSocket API as a
+            custom element. It uses standard JavaScript modules and needs no
+            framework or build step.
+          </p>
+        </header>
+
+        <section class="guide-section" id="getting-started">
+          <p class="eyebrow">01 · Getting started</p>
+          <h2>Register the element</h2>
+          <p>
+            Import the aggregate entry point once. It registers every custom
+            element shipped by the repository.
+          </p>
+          <pre class="code-block"><code>&lt;script type="module"&gt;
+  import "../../src/index.js";
+&lt;/script&gt;</code></pre>
+          <p>
+            To register only WebSocket, import
+            <code>src/web-socket/web-socket.js</code> instead.
+          </p>
+        </section>
+
+        <section class="guide-section" id="connection">
+          <p class="eyebrow">02 · Connection</p>
+          <h2>Open automatically or manually</h2>
+          <p>
+            Add <code>auto</code> to connect when the element enters the document.
+            Without it, query the element and call <code>open()</code> when ready.
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  id="socket"
+  url="wss://echo.websocket.org"
+  auto
+&gt;&lt;/web-socket&gt;</code></pre>
+          <pre class="code-block"><code>const socket = document.querySelector("#socket");
+socket.open();</code></pre>
+          <div class="note">
+            Removing the element from the DOM stops retry work and closes its
+            active connection.
+          </div>
+        </section>
+
+        <section class="guide-section" id="events">
+          <p class="eyebrow">03 · Events</p>
+          <h2>Read data from <code>event.detail</code></h2>
+          <p>
+            Native <code>open</code>, <code>message</code>, <code>error</code>, and
+            <code>close</code> events are dispatched from the element as
+            same-named <code>CustomEvent</code> objects.
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  onopen="OnOpen(event)"
+  onmessage="OnMessage(event)"
+&gt;&lt;/web-socket&gt;
+
+&lt;script&gt;
+  function OnMessage(event) {
+    console.log(event.detail.data);
+    console.log(event.detail.metadata.transport);
+  }
+&lt;/script&gt;</code></pre>
+          <p>
+            The transport metadata is always <code>"main"</code> or
+            <code>"worker"</code>. You can also use event-handler properties or
+            <code>addEventListener()</code>.
+          </p>
+        </section>
+
+        <section class="guide-section" id="methods">
+          <p class="eyebrow">04 · Methods</p>
+          <h2>Control the same element from JavaScript</h2>
+          <pre class="code-block"><code>const socket = document.querySelector("web-socket");
+
+socket.open();
+socket.send("hello");
+socket.close();</code></pre>
+          <p>
+            <code>send(data)</code> forwards supported WebSocket data unchanged.
+            Calling it before the connection opens throws
+            <code>InvalidStateError</code>. Repeated <code>open()</code> calls while
+            connecting or open have no effect.
+          </p>
+        </section>
+
+        <section class="guide-section" id="worker">
+          <p class="eyebrow">05 · Worker transport</p>
+          <h2>Move connection work into a Worker</h2>
+          <p>
+            Add <code>background</code> to run WebSocket connection, send, close,
+            and reconnect work in a dedicated module Worker. The public methods
+            and events stay the same.
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  auto
+  background
+&gt;&lt;/web-socket&gt;</code></pre>
+          <p>
+            Worker mode uses structured cloning without a transfer list, so a
+            caller-owned <code>ArrayBuffer</code> is not detached.
+          </p>
+        </section>
+
+        <section class="guide-section" id="fallback">
+          <p class="eyebrow">06 · Fallback</p>
+          <h2>Opt in to main-thread fallback</h2>
+          <p>
+            Worker startup failures emit <code>error</code> and do not silently
+            change transport. Add <code>fallback</code> only when main-thread
+            fallback is acceptable.
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  background
+  fallback
+&gt;&lt;/web-socket&gt;</code></pre>
+          <p>
+            Fallback applies only before the Worker becomes ready. Runtime Worker
+            failures never change transport automatically.
+          </p>
+        </section>
+
+        <section class="guide-section" id="reconnect">
+          <p class="eyebrow">07 · Reconnect</p>
+          <h2>Retry remote closes</h2>
+          <p>
+            Add <code>reconnect</code> to reconnect after a remote close. Explicit
+            <code>close()</code> and DOM removal never reconnect.
+          </p>
+          <pre class="code-block"><code>&lt;web-socket
+  url="wss://echo.websocket.org"
+  auto
+  reconnect
+  reconnect-delay="2500"
+&gt;&lt;/web-socket&gt;</code></pre>
+          <p>
+            Without <code>reconnect-delay</code>, retries use exponential backoff:
+            1, 2, 4, 8, 16, then 30 seconds, capped at 30 seconds.
+          </p>
+        </section>
+
+        <section class="guide-section" id="api">
+          <p class="eyebrow">08 · API reference</p>
+          <h2>Attributes, methods, and events</h2>
+          <table class="reference-table">
+            <thead><tr><th>Attribute</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>url</code></td><td>Endpoint passed to native WebSocket.</td></tr>
+              <tr><td><code>auto</code></td><td>Open when connected to the document.</td></tr>
+              <tr><td><code>background</code></td><td>Use the dedicated Worker transport.</td></tr>
+              <tr><td><code>fallback</code></td><td>Allow main transport if Worker startup fails.</td></tr>
+              <tr><td><code>reconnect</code></td><td>Retry after a non-manual close.</td></tr>
+              <tr><td><code>reconnect-delay</code></td><td>Use a fixed non-negative retry delay in milliseconds.</td></tr>
+              <tr><td><code>onopen</code>, <code>onmessage</code>, <code>onerror</code>, <code>onclose</code></td><td>Call a global handler with <code>event</code>.</td></tr>
+            </tbody>
+          </table>
+          <table class="reference-table">
+            <thead><tr><th>Method</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>open()</code></td><td>Open a connection unless one is already connecting or open.</td></tr>
+              <tr><td><code>send(data)</code></td><td>Send a native WebSocket-compatible value.</td></tr>
+              <tr><td><code>close()</code></td><td>Stop retrying and close the active connection.</td></tr>
+            </tbody>
+          </table>
+          <table class="reference-table">
+            <thead><tr><th>Event</th><th><code>event.detail.data</code></th></tr></thead>
+            <tbody>
+              <tr><td><code>open</code></td><td><code>{ url }</code></td></tr>
+              <tr><td><code>message</code></td><td>The received text or binary value.</td></tr>
+              <tr><td><code>error</code></td><td>The native or wrapped error value.</td></tr>
+              <tr><td><code>close</code></td><td><code>{ code, reason, wasClean }</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="guide-section" id="examples">
+          <p class="eyebrow">09 · Examples</p>
+          <h2>Try the element in your browser</h2>
+          <p>
+            The examples expose editable endpoints, connection controls,
+            transport metadata, and a live event log for main and Worker modes.
+          </p>
+          <a class="example-link" href="../../examples/">Interactive examples</a>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

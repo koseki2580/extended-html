@@ -21,7 +21,7 @@ const isAllowedPath = (pathname) =>
   pathname === "/" ||
   pathname === "/index.html" ||
   pathname === "/favicon.ico" ||
-  ["/src/", "/examples/", "/tests/e2e/fixtures/"].some((prefix) =>
+  ["/src/", "/examples/", "/guide/", "/tests/e2e/fixtures/"].some((prefix) =>
     pathname.startsWith(prefix),
   );
 

@@ -1,4 +1,5 @@
 const examplesRoot = new URL("../", import.meta.url);
+const siteRoot = new URL("../../", import.meta.url);
 const page = document.body.dataset.page;
 
 const links = [
@@ -8,6 +9,16 @@ const links = [
     id: "web-socket-worker",
     label: "WebSocket: Worker",
     path: "web-socket/background.html",
+  },
+  {
+    id: "guide-en",
+    label: "English User Guide",
+    href: new URL("guide/en/", siteRoot).href,
+  },
+  {
+    id: "guide-ja",
+    label: "日本語ユーザーガイド",
+    href: new URL("guide/ja/", siteRoot).href,
   },
 ];
 
@@ -29,7 +40,7 @@ if (sidebar) {
   for (const link of links) {
     const item = document.createElement("li");
     const anchor = document.createElement("a");
-    anchor.href = new URL(link.path, examplesRoot).href;
+    anchor.href = link.href ?? new URL(link.path, examplesRoot).href;
     anchor.textContent = link.label;
     if (link.id === page) {
       anchor.className = "is-active";
