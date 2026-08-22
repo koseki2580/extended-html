@@ -69,6 +69,8 @@ export class AudioNodeElement extends AudioEventTargetElement {
   }
 
   _configureAudioNode() {}
+
+  _validateAudioConfiguration() {}
 }
 
 export class AudioSourceElement extends AudioNodeElement {

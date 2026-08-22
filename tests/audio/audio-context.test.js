@@ -40,6 +40,8 @@ if (!customElements.get("audio-output")) {
 
 class FakeAudioContext extends EventTarget {
   static instances = [];
+  static nodeCreations = 0;
+  static mediaSourceCreations = 0;
 
   constructor() {
     super();
@@ -52,6 +54,7 @@ class FakeAudioContext extends EventTarget {
   }
 
   createNode(name) {
+    FakeAudioContext.nodeCreations += 1;
     return {
       name,
       connect: (target) => this.events.push(`connect:${name}->${target.name}`),
@@ -60,6 +63,7 @@ class FakeAudioContext extends EventTarget {
   }
 
   createMediaElementSource() {
+    FakeAudioContext.mediaSourceCreations += 1;
     return this.createNode("file");
   }
 
@@ -97,6 +101,8 @@ const nativeDescriptor = Object.getOwnPropertyDescriptor(globalThis, "AudioConte
 
 const installFakeAudioContext = () => {
   FakeAudioContext.instances.length = 0;
+  FakeAudioContext.nodeCreations = 0;
+  FakeAudioContext.mediaSourceCreations = 0;
   Object.defineProperty(globalThis, "AudioContext", {
     configurable: true,
     writable: true,
@@ -155,6 +161,21 @@ describe("AudioContextElement", () => {
     );
 
     assertEqual(FakeAudioContext.instances.length, 0, "invalid graph creates no context");
+  });
+
+  it("preflights node configuration before creating browser resources", async () => {
+    const { context } = createElement();
+    context.querySelector("audio-biquad-filter").setAttribute("frequency", "12px");
+
+    await assertRejects(
+      context.resume(),
+      "SyntaxError",
+      'Biquad frequency must be a finite number, received "12px"',
+    );
+
+    assertEqual(FakeAudioContext.instances.length, 0, "no native context");
+    assertEqual(FakeAudioContext.nodeCreations, 0, "no native node");
+    assertEqual(FakeAudioContext.mediaSourceCreations, 0, "no media source");
   });
 
   it("coalesces concurrent resume and suspend calls", async () => {

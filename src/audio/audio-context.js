@@ -81,6 +81,9 @@ export class AudioContextElement extends AudioEventTargetElement {
       if (this.#runtime === null) {
         // Validation must complete before the first browser resource is created.
         const plan = buildAudioGraphPlan(this);
+        for (const { element } of plan.nodes) {
+          element._validateAudioConfiguration();
+        }
         const Context = globalThis.AudioContext ?? globalThis.webkitAudioContext;
         if (typeof Context !== "function") throw unavailableError();
         this.#nativeContext = new Context();

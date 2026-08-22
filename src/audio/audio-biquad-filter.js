@@ -127,6 +127,10 @@ export class AudioBiquadFilterElement extends AudioNodeElement {
     }
   }
 
+  _validateAudioConfiguration() {
+    this.#readConfiguration();
+  }
+
   #readConfiguration() {
     const typeValue = this.getAttribute("type");
     const type = typeValue === null ? "lowpass" : validateType(typeValue);
