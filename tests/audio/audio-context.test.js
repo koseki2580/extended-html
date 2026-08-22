@@ -632,6 +632,61 @@ describe("AudioContextElement", () => {
     );
   });
 
+  it("observes non-audio ids for duplicate validation and recovery", async () => {
+    const { context } = createElement();
+    const filter = context.querySelector("audio-biquad-filter");
+    filter.id = "same";
+    document.body.append(context);
+    await context.resume();
+    const native = FakeAudioContext.instances[0];
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+    native.events.length = 0;
+
+    const duplicate = document.createElement("div");
+    duplicate.id = "same";
+    context.append(duplicate);
+    await flushReconciliation();
+
+    assertEqual(errors.length, 1, "prebuilt duplicate id reports an error");
+    assertEqual(errors[0].name, "SyntaxError", "duplicate id error is wrapped");
+    assert(
+      !native.events.some((event) => event.startsWith("disconnect:")),
+      "duplicate id preserves the running graph",
+    );
+
+    filter.setAttribute("frequency", "900");
+    await flushReconciliation();
+    assertEqual(filter.frequency.value, 350, "invalid graph keeps config staged");
+    assertEqual(errors.length, 2, "dirty invalid candidate is still reported");
+
+    duplicate.remove();
+    await flushReconciliation();
+
+    assertEqual(filter.frequency.value, 900, "id removal reconciles the candidate");
+    assertEqual(errors.length, 2, "recovery adds no error");
+  });
+
+  it("keeps non-audio ids inside a nested context isolated", async () => {
+    const { context: outer } = createElement();
+    outer.querySelector("audio-biquad-filter").id = "same";
+    document.body.append(outer);
+    await outer.resume();
+    const errors = [];
+    outer.onerror = (event) => errors.push(event.detail.data);
+
+    const { context: inner } = createElement();
+    const nestedMetadata = document.createElement("div");
+    nestedMetadata.id = "same";
+    inner.append(nestedMetadata);
+    outer.append(inner);
+    await flushReconciliation();
+
+    assertEqual(errors.length, 0, "nested id does not affect the outer scope");
+    await inner.resume();
+    assertEqual(inner.state, "running", "inner id remains independently valid");
+  });
+
   it("reports a new-source activation failure while old sources keep running", async () => {
     const { context, file: first } = createElement();
     document.body.append(context);

@@ -244,6 +244,7 @@ export class AudioContextElement extends AudioEventTargetElement {
   #subtreeAffectsAudioGraph(node) {
     if (node.nodeType !== 1) return false;
     if (node.localName === "audio-context") return false;
+    if (node.id) return true;
     if (node.localName.startsWith("audio-")) return true;
     return [...node.children].some((child) =>
       this.#subtreeAffectsAudioGraph(child),
