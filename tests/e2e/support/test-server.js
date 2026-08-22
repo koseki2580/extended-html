@@ -17,6 +17,38 @@ const MIME_TYPES = new Map([
   [".svg", "image/svg+xml"],
 ]);
 
+const createToneWav = () => {
+  const sampleRate = 44100;
+  const durationSeconds = 1;
+  const sampleCount = sampleRate * durationSeconds;
+  const bytesPerSample = 2;
+  const dataSize = sampleCount * bytesPerSample;
+  const wav = Buffer.alloc(44 + dataSize);
+
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataSize, 4);
+  wav.write("WAVE", 8);
+  wav.write("fmt ", 12);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * bytesPerSample, 28);
+  wav.writeUInt16LE(bytesPerSample, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataSize, 40);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = Math.sin((2 * Math.PI * 440 * index) / sampleRate);
+    wav.writeInt16LE(Math.round(sample * 0x1999), 44 + index * bytesPerSample);
+  }
+  return wav;
+};
+
+const TONE_WAV_PATH = "/tests/e2e/fixtures/tone.wav";
+const TONE_WAV = createToneWav();
+
 const isAllowedPath = (pathname) =>
   pathname === "/" ||
   pathname === "/index.html" ||
@@ -58,6 +90,15 @@ export const startTestServer = async () => {
       }
       if (pathname === "/favicon.ico") {
         response.writeHead(204).end();
+        return;
+      }
+      if (pathname === TONE_WAV_PATH) {
+        response.writeHead(200, {
+          "content-type": "audio/wav",
+          "content-length": TONE_WAV.length,
+          "cache-control": "no-store",
+        });
+        response.end(request.method === "HEAD" ? undefined : TONE_WAV);
         return;
       }
 

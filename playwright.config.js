@@ -10,5 +10,11 @@ export default defineConfig({
   use: {
     channel: "chrome",
     headless: true,
+    launchOptions: {
+      args: [
+        "--use-fake-device-for-media-stream",
+        "--use-fake-ui-for-media-stream",
+      ],
+    },
   },
 });

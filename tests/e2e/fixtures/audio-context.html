@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>audio-context E2E fixture</title>
+  </head>
+  <body>
+    <audio-context id="audio">
+      <audio-input-mic id="mic">
+        <audio-biquad-filter id="mix" frequency="1200">
+          <audio-output id="output"></audio-output>
+        </audio-biquad-filter>
+      </audio-input-mic>
+      <audio-input-file
+        id="music"
+        src="/tests/e2e/fixtures/tone.wav"
+        to="mix"
+        loop
+      ></audio-input-file>
+    </audio-context>
+    <div id="invalid-host"></div>
+
+    <script type="module">
+      import "/src/audio/index.js";
+
+      const context = document.querySelector("#audio");
+      const mic = document.querySelector("#mic");
+      const file = document.querySelector("#music");
+      const events = [];
+      let micStream = null;
+
+      const record = (node) => (event) => {
+        const data = event.detail.data;
+        if (data instanceof MediaStream) micStream = data;
+        events.push({
+          node,
+          type: event.type,
+          dataKind: data?.constructor?.name ?? typeof data,
+          metadata: event.detail.metadata,
+          contextState: context.state,
+          trackStates:
+            data instanceof MediaStream
+              ? data.getTracks().map(({ enabled, readyState }) => ({
+                  enabled,
+                  readyState,
+                }))
+              : null,
+        });
+      };
+
+      for (const type of ["statechange", "error"]) {
+        context.addEventListener(type, record("audio"));
+      }
+      for (const type of ["open", "close", "error"]) {
+        mic.addEventListener(type, record("mic"));
+      }
+      for (const type of ["play", "playing", "pause", "ended", "error"]) {
+        file.addEventListener(type, record("music"));
+      }
+
+      const trackStates = () =>
+        micStream?.getTracks().map(({ enabled, readyState }) => ({
+          enabled,
+          readyState,
+        })) ?? [];
+
+      globalThis.audioFixture = {
+        ready: true,
+        context,
+        file,
+        events,
+        snapshot: () => ({
+          connected: context.isConnected,
+          contextState: context.state,
+          filePaused: file.paused,
+          micTracks: trackStates(),
+          events: structuredClone(events),
+        }),
+      };
+    </script>
+  </body>
+</html>
