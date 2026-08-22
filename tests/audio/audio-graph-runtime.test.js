@@ -425,6 +425,50 @@ describe("AudioGraphRuntime", () => {
     assertEqual(fixture.context.state, "running", "native context is repaired");
   });
 
+  it("replaces ended source node connections before reporting the source connected", async () => {
+    const fixture = createFixture();
+    const oldNode = createNativeNode("old-mic", fixture.events);
+    const replacementNode = createNativeNode("new-mic", fixture.events);
+    fixture.first.nativeNode = oldNode;
+    let activations = 0;
+    fixture.first.activate = async () => {
+      activations += 1;
+      if (activations === 1) return;
+      oldNode.disconnect();
+      fixture.first._detachAudioNode(oldNode);
+      fixture.first._attachAudioNode(replacementNode);
+      fixture.first.nativeNode = replacementNode;
+    };
+    fixture.first.connected = async () => {
+      if (activations > 1) fixture.events.push("connected:replacement");
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    await runtime.suspend();
+    fixture.events.length = 0;
+
+    await runtime.resume();
+
+    const oldDisconnect = fixture.events.indexOf("disconnect:old-mic->filter");
+    const replacementConnect = fixture.events.indexOf("connect:new-mic->filter");
+    const connected = fixture.events.indexOf("connected:replacement");
+    assert(oldDisconnect >= 0, "old native pair is removed from runtime tracking");
+    assert(
+      oldDisconnect < replacementConnect && replacementConnect < connected,
+      "replacement connects exactly before the connected hook",
+    );
+    assertEqual(
+      fixture.events.filter((event) => event === "connect:new-mic->filter").length,
+      1,
+      "replacement edge connects once",
+    );
+    assertEqual(fixture.first._getAudioNode(), replacementNode, "element node is replaced");
+  });
+
   it("cancels in-flight activation before opening or starting later sources", async () => {
     const fixture = createFixture();
     let resolveFirst;

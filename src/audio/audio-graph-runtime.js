@@ -322,8 +322,17 @@ export class AudioGraphRuntime {
   }
 
   #captureActivatedNode(element) {
-    if (this.#nodes.has(element)) return;
-    this.#nodes.set(element, element._getAudioNode());
+    const activatedNode = element._getAudioNode();
+    const previousNode = this.#nodes.get(element);
+    if (previousNode === activatedNode) return;
+    if (previousNode) {
+      for (const [key, edge] of [...this.#appliedEdges]) {
+        if (edge.fromElement === element || edge.toElement === element) {
+          this.#disconnectEdge(key, edge);
+        }
+      }
+    }
+    this.#nodes.set(element, activatedNode);
   }
 
   #applyAvailableEdges(plan, addedEdgeKeys = null) {
@@ -343,7 +352,12 @@ export class AudioGraphRuntime {
         }
         throw error;
       }
-      this.#appliedEdges.set(key, { from, to });
+      this.#appliedEdges.set(key, {
+        from,
+        to,
+        fromElement: edge.from,
+        toElement: edge.to,
+      });
       addedEdgeKeys?.push(key);
     }
   }
