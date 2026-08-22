@@ -315,4 +315,97 @@ describe("AudioGraphRuntime", () => {
     );
     assertEqual(runtime.state, "closed", "terminal runtime state");
   });
+
+  it("reactivates every source after a partial source suspension failure", async () => {
+    const fixture = createFixture();
+    const failure = new Error("second suspend failed");
+    let firstActive = false;
+    let secondActive = false;
+    let firstActivations = 0;
+    let secondActivations = 0;
+    fixture.first.activate = async () => {
+      firstActive = true;
+      firstActivations += 1;
+    };
+    fixture.second.activate = async () => {
+      secondActive = true;
+      secondActivations += 1;
+    };
+    fixture.first.suspend = async () => {
+      fixture.events.push("suspend:first");
+      firstActive = false;
+    };
+    fixture.second.suspend = async () => {
+      fixture.events.push("suspend:second");
+      secondActive = false;
+      throw failure;
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+
+    let rejected;
+    try {
+      await runtime.suspend();
+    } catch (error) {
+      rejected = error;
+    }
+
+    assertEqual(rejected, failure, "original source suspension error");
+    assertEqual(
+      fixture.events.slice(0, 2).join(","),
+      "suspend:second,suspend:first",
+      "reverse suspension continues after failure",
+    );
+    assertEqual(runtime.state, "suspended", "runtime requires source recovery");
+    await runtime.resume();
+
+    assertEqual(firstActive, true, "first source is repaired");
+    assertEqual(secondActive, true, "second source is repaired");
+    assertEqual(firstActivations, 2, "first source reactivates");
+    assertEqual(secondActivations, 2, "second source reactivates");
+  });
+
+  it("reactivates every source after native suspension partially fails", async () => {
+    const fixture = createFixture();
+    const failure = new Error("native suspend failed");
+    let firstActivations = 0;
+    let secondActivations = 0;
+    fixture.first.activate = async () => {
+      firstActivations += 1;
+    };
+    fixture.second.activate = async () => {
+      secondActivations += 1;
+    };
+    fixture.context.suspend = async () => {
+      fixture.events.push("context:suspend");
+      fixture.context.state = "suspended";
+      throw failure;
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+
+    let rejected;
+    try {
+      await runtime.suspend();
+    } catch (error) {
+      rejected = error;
+    }
+
+    assertEqual(rejected, failure, "original native suspension error");
+    assertEqual(runtime.state, "suspended", "runtime requires source recovery");
+    await runtime.resume();
+
+    assertEqual(firstActivations, 2, "first source reactivates");
+    assertEqual(secondActivations, 2, "second source reactivates");
+    assertEqual(fixture.context.state, "running", "native context is repaired");
+  });
 });

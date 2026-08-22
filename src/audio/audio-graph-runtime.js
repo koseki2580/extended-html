@@ -116,8 +116,10 @@ export class AudioGraphRuntime {
     } catch (error) {
       firstError ??= error;
     }
-    if (firstError !== null) throw firstError;
+    // Any attempted suspension may have paused a subset of sources.
+    // A later resume must therefore run the complete source activation sequence.
     this.#state = "suspended";
+    if (firstError !== null) throw firstError;
   }
 
   async #performClose() {
