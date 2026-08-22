@@ -1,10 +1,26 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { stagePages } from "../../scripts/stage-pages.js";
+
+const listFiles = async (directory, relativeDirectory = "") => {
+  const entries = await readdir(join(directory, relativeDirectory), {
+    withFileTypes: true,
+  });
+  const files = [];
+  for (const entry of entries) {
+    const relativePath = join(relativeDirectory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFiles(directory, relativePath)));
+    } else if (entry.isFile()) {
+      files.push(relativePath);
+    }
+  }
+  return files.sort();
+};
 
 test("stages only the static site and runtime source", async () => {
   await assert.rejects(
@@ -32,6 +48,17 @@ test("stages only the static site and runtime source", async () => {
 
     for (const file of expectedFiles) {
       assert.ok((await readFile(join(destination, file), "utf8")).length > 0, file);
+    }
+
+    const audioSource = join(process.cwd(), "src/audio");
+    const audioFiles = await listFiles(audioSource);
+    assert.ok(audioFiles.includes("index.js"), "src/audio/index.js");
+    for (const file of audioFiles) {
+      assert.deepEqual(
+        await readFile(join(destination, "src/audio", file)),
+        await readFile(join(audioSource, file)),
+        `src/audio/${file}`,
+      );
     }
 
     await assert.rejects(readFile(join(destination, "stale.txt")));
