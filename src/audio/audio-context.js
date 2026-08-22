@@ -52,8 +52,7 @@ export class AudioContextElement extends AudioEventTargetElement {
   constructor() {
     super();
     this.#observer = new MutationObserver((records) => {
-      this.#recordMutations(records);
-      this.#queueReconciliation();
+      if (this.#recordMutations(records)) this.#queueReconciliation();
     });
     this.#observer.observe(this, {
       subtree: true,
@@ -210,9 +209,14 @@ export class AudioContextElement extends AudioEventTargetElement {
   }
 
   #recordMutations(records) {
-    if (records.length === 0) return;
+    const relevantRecords = records.filter(
+      (record) =>
+        record.target === this ||
+        record.target.closest?.("audio-context") === this,
+    );
+    if (relevantRecords.length === 0) return false;
     this.#mutationGeneration += 1;
-    for (const record of records) {
+    for (const record of relevantRecords) {
       if (
         record.type === "attributes" &&
         CONFIGURATION_ATTRIBUTES.has(record.attributeName)
@@ -224,6 +228,7 @@ export class AudioContextElement extends AudioEventTargetElement {
         );
       }
     }
+    return true;
   }
 
   #snapshotDirtyConfiguration() {

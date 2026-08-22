@@ -712,6 +712,48 @@ describe("AudioContextElement", () => {
     assertEqual(context.state, "running", "context remains running");
   });
 
+  it("ignores nested-context mutations while an outer source activation is pending", async () => {
+    const { context: outer } = createElement();
+    const { context: inner } = createElement();
+    outer.append(inner);
+    document.body.append(outer);
+    await outer.resume();
+    await inner.resume();
+    const outerErrors = [];
+    outer.onerror = (event) => outerErrors.push(event.detail.data);
+
+    const added = document.createElement("audio-input-file");
+    added.append(document.createElement("audio-output"));
+    let resolveFirstPlayback;
+    let plays = 0;
+    let pauses = 0;
+    added._getMediaElement().play = () => {
+      plays += 1;
+      if (plays > 1) return Promise.resolve();
+      return new Promise((resolve) => {
+        resolveFirstPlayback = resolve;
+      });
+    };
+    added._getMediaElement().pause = () => {
+      pauses += 1;
+    };
+    outer.append(added);
+    while (!resolveFirstPlayback) await Promise.resolve();
+
+    const innerFilter = inner.querySelector("audio-biquad-filter");
+    innerFilter.setAttribute("frequency", "900");
+    await Promise.resolve();
+    await Promise.resolve();
+    resolveFirstPlayback();
+    await flushReconciliation();
+    await flushReconciliation();
+
+    assertEqual(plays, 1, "outer source activation is not replayed");
+    assertEqual(pauses, 0, "outer source is not rolled back");
+    assertEqual(outerErrors.length, 0, "outer context reports no error");
+    assertEqual(innerFilter.frequency.value, 900, "inner observer applies its mutation");
+  });
+
   it("disconnects its observer synchronously when terminal close starts", async () => {
     const { context } = createElement();
     document.body.append(context);
