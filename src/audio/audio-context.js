@@ -21,6 +21,9 @@ export class AudioContextElement extends AudioEventTargetElement {
   #closePromise = null;
   #handleNativeStateChange = (event) => {
     dispatchAudioEvent(this, "statechange", event, this);
+    if (this.#closed && this.#nativeContext?.state === "closed") {
+      this.#removeNativeStateChangeListener();
+    }
   };
 
   get state() {
@@ -109,13 +112,16 @@ export class AudioContextElement extends AudioEventTargetElement {
       if (this.#runtime !== null) await this.#runtime.close();
     } catch (error) {
       dispatchAudioEvent(this, "error", error, this);
+      this.#removeNativeStateChangeListener();
       throw error;
-    } finally {
-      this.#nativeContext?.removeEventListener(
-        "statechange",
-        this.#handleNativeStateChange,
-      );
     }
+  }
+
+  #removeNativeStateChangeListener() {
+    this.#nativeContext?.removeEventListener(
+      "statechange",
+      this.#handleNativeStateChange,
+    );
   }
 
   #trackPending(kind, operation) {

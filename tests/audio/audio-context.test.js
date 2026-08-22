@@ -291,6 +291,33 @@ describe("AudioContextElement", () => {
     );
   });
 
+  it("forwards one asynchronously queued native closed state before detaching", async () => {
+    const { context } = createElement();
+    const states = [];
+    context.onstatechange = (event) => states.push(event);
+    await context.resume();
+    const native = FakeAudioContext.instances[0];
+    states.length = 0;
+    native.close = () => {
+      native.events.push("close");
+      setTimeout(() => {
+        native.state = "closed";
+        native.dispatchEvent(new Event("statechange"));
+      }, 0);
+      return Promise.resolve();
+    };
+
+    await context.close();
+    assertEqual(states.length, 0, "close resolution does not synthesize an event");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assertEqual(states.length, 1, "queued closed state is forwarded once");
+    assertEqual(states[0].detail.data.type, "statechange", "native event data");
+    assertEqual(context.state, "closed", "native closed state is proxied");
+    native.dispatchEvent(new Event("statechange"));
+    assertEqual(states.length, 1, "listener detaches after forwarding closed");
+  });
+
   it("uses DOM removal as terminal cleanup without an unhandled rejection", async () => {
     const { context } = createElement();
     document.body.append(context);
