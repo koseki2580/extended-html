@@ -61,7 +61,7 @@ for (const guide of [
     language: "English",
     path: "guide/en/",
     lang: "en",
-    heading: "Use WebSocket from HTML",
+    heading: "Use browser APIs from HTML",
     translation: "日本語で読む",
     translationPath: "../ja/",
     examples: "Interactive examples",
@@ -70,7 +70,7 @@ for (const guide of [
     language: "Japanese",
     path: "guide/ja/",
     lang: "ja",
-    heading: "WebSocketをHTMLで使う",
+    heading: "ブラウザAPIをHTMLで使う",
     translation: "Read in English",
     translationPath: "../en/",
     examples: "動作するサンプル",
@@ -148,6 +148,16 @@ test("examples overview and sidebar navigate to the Audio example", async ({ pag
 
   await expect(page).toHaveURL(/\/examples\/audio-context\/$/);
   await expect(page.getByRole("heading", { name: "Build one audio graph." })).toBeVisible();
+  await expect(page.getByRole("note")).toContainText(
+    "Use headphones or keep speaker volume low",
+  );
+  const skipLink = page.getByRole("link", { name: "Skip to audio example" });
+  await expect(skipLink).toHaveAttribute("href", "#main-content");
+  await page.keyboard.press("Tab");
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#main-content$/);
+  await expect(page.locator("#main-content")).toBeFocused();
   const navigation = page.getByRole("navigation", { name: "Examples" });
   await expect(navigation.getByRole("link", { name: "Audio graph" })).toHaveAttribute(
     "aria-current",

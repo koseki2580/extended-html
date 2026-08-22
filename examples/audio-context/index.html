@@ -11,9 +11,10 @@
     <link rel="stylesheet" href="../assets/site.css" />
   </head>
   <body data-page="audio-context">
+    <a class="skip-link" href="#main-content">Skip to audio example</a>
     <div class="site-shell">
       <aside class="site-sidebar" data-site-sidebar></aside>
-      <main class="site-main">
+      <main class="site-main" id="main-content" tabindex="-1">
         <header class="hero">
           <p class="eyebrow">Web Audio · Declarative graph</p>
           <h1>Build one<br />audio graph.</h1>
@@ -29,6 +30,10 @@
             <p class="field-help">
               Start requests microphone permission and begins every declared
               source. Close permanently releases the graph.
+            </p>
+            <p class="audio-note" role="note">
+              <strong>Listening safety:</strong> Use headphones or keep speaker
+              volume low before starting the microphone and tone.
             </p>
             <div class="socket-status" aria-live="polite">
               <span class="status-pill">

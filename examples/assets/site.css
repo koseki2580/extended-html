@@ -53,6 +53,22 @@ button,
   outline-offset: 3px;
 }
 
+.skip-link {
+  position: fixed;
+  z-index: 10;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.5rem;
+  color: var(--action-dark);
+  background: var(--accent);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
 .site-shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
@@ -284,6 +300,16 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
+}
+
+.audio-note {
+  max-width: 72ch;
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border-left: 4px solid var(--accent);
+  border-radius: 0.5rem;
+  color: var(--text);
+  background: #0c2033;
 }
 
 .socket-actions button {
