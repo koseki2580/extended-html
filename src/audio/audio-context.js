@@ -209,10 +209,8 @@ export class AudioContextElement extends AudioEventTargetElement {
   }
 
   #recordMutations(records) {
-    const relevantRecords = records.filter(
-      (record) =>
-        record.target === this ||
-        record.target.closest?.("audio-context") === this,
+    const relevantRecords = records.filter((record) =>
+      this.#isRelevantMutation(record),
     );
     if (relevantRecords.length === 0) return false;
     this.#mutationGeneration += 1;
@@ -229,6 +227,27 @@ export class AudioContextElement extends AudioEventTargetElement {
       }
     }
     return true;
+  }
+
+  #isRelevantMutation(record) {
+    const targetIsOwned =
+      record.target === this ||
+      record.target.closest?.("audio-context") === this;
+    if (!targetIsOwned) return false;
+    if (record.type !== "childList") return true;
+
+    return [...record.addedNodes, ...record.removedNodes].some((node) =>
+      this.#subtreeAffectsAudioGraph(node),
+    );
+  }
+
+  #subtreeAffectsAudioGraph(node) {
+    if (node.nodeType !== 1) return false;
+    if (node.localName === "audio-context") return false;
+    if (node.localName.startsWith("audio-")) return true;
+    return [...node.children].some((child) =>
+      this.#subtreeAffectsAudioGraph(child),
+    );
   }
 
   #snapshotDirtyConfiguration() {

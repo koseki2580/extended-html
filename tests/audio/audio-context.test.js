@@ -754,6 +754,87 @@ describe("AudioContextElement", () => {
     assertEqual(innerFilter.frequency.value, 900, "inner observer applies its mutation");
   });
 
+  it("ignores a nested context root added during outer source activation", async () => {
+    const { context: outer } = createElement();
+    document.body.append(outer);
+    await outer.resume();
+    const outerErrors = [];
+    outer.onerror = (event) => outerErrors.push(event.detail.data);
+
+    const added = document.createElement("audio-input-file");
+    added.append(document.createElement("audio-output"));
+    let resolveFirstPlayback;
+    let plays = 0;
+    let pauses = 0;
+    added._getMediaElement().play = () => {
+      plays += 1;
+      if (plays > 1) return Promise.resolve();
+      return new Promise((resolve) => {
+        resolveFirstPlayback = resolve;
+      });
+    };
+    added._getMediaElement().pause = () => {
+      pauses += 1;
+    };
+    outer.append(added);
+    while (!resolveFirstPlayback) await Promise.resolve();
+
+    const { context: inner } = createElement();
+    outer.append(inner);
+    await Promise.resolve();
+    await Promise.resolve();
+    resolveFirstPlayback();
+    await flushReconciliation();
+    await flushReconciliation();
+
+    assertEqual(plays, 1, "nested root addition does not replay outer source");
+    assertEqual(pauses, 0, "nested root addition does not roll back outer source");
+    assertEqual(outerErrors.length, 0, "outer context reports no error");
+    await inner.resume();
+    assertEqual(inner.state, "running", "added inner context remains independent");
+  });
+
+  it("ignores a nested context root removed during outer source activation", async () => {
+    const { context: outer } = createElement();
+    const { context: inner } = createElement();
+    outer.append(inner);
+    document.body.append(outer);
+    await outer.resume();
+    await inner.resume();
+    const outerErrors = [];
+    outer.onerror = (event) => outerErrors.push(event.detail.data);
+
+    const added = document.createElement("audio-input-file");
+    added.append(document.createElement("audio-output"));
+    let resolveFirstPlayback;
+    let plays = 0;
+    let pauses = 0;
+    added._getMediaElement().play = () => {
+      plays += 1;
+      if (plays > 1) return Promise.resolve();
+      return new Promise((resolve) => {
+        resolveFirstPlayback = resolve;
+      });
+    };
+    added._getMediaElement().pause = () => {
+      pauses += 1;
+    };
+    outer.append(added);
+    while (!resolveFirstPlayback) await Promise.resolve();
+
+    inner.remove();
+    await Promise.resolve();
+    await Promise.resolve();
+    resolveFirstPlayback();
+    await flushReconciliation();
+    await flushReconciliation();
+
+    assertEqual(plays, 1, "nested root removal does not replay outer source");
+    assertEqual(pauses, 0, "nested root removal does not roll back outer source");
+    assertEqual(outerErrors.length, 0, "outer context reports no error");
+    assertEqual(inner.state, "closed", "removed inner context closes independently");
+  });
+
   it("disconnects its observer synchronously when terminal close starts", async () => {
     const { context } = createElement();
     document.body.append(context);
