@@ -34,3 +34,17 @@
 - **Rule:** When a public operation promises to be idempotent in the current state, return for that state before validating inputs that will not be used.
 - **Why:** Otherwise irrelevant configuration changes can turn a documented no-op into an exception.
 - **Apply-when:** Designing lifecycle methods such as open, start, mount, or connect.
+
+## Batch design questions when requested
+
+- **What happened:** Audio API brainstorming continued with one decision per turn after the user preferred grouped questions.
+- **Rule:** When the user asks for consolidated questions, present the remaining related decisions together with concise recommended defaults.
+- **Why:** Excessive turn-by-turn questioning slows review without improving clarity.
+- **Apply-when:** Refining a feature design after its core direction is already understood.
+
+## Let the declared owner orchestrate child resources
+
+- **What happened:** Audio context startup was split between `context.resume()` and an individual file `play()` call despite the context owning the graph.
+- **Rule:** When a parent custom element owns a declarative graph, its lifecycle method must coordinate every declared child resource unless explicitly excluded.
+- **Why:** Requiring per-child startup undermines the HTML hierarchy and makes orchestration leak into consumer JavaScript.
+- **Apply-when:** Designing lifecycle APIs for nested custom elements or resource graphs.
