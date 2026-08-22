@@ -63,6 +63,21 @@ export class AudioInputMicElement extends AudioSourceElement {
     }
   }
 
+  async _rollbackAudioCandidate() {
+    if (this.#activationPromise !== null) {
+      try {
+        await this.#activationPromise;
+      } catch {
+        // Acquisition failures have no provisional stream left to release.
+      }
+    }
+
+    for (const track of this.#stream?.getTracks() ?? []) track.stop();
+    this.#releaseSource();
+    this.#stream = null;
+    this.#openDispatched = false;
+  }
+
   _close() {
     if (this.#closePromise === null) {
       this.#closed = true;

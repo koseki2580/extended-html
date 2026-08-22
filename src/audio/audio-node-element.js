@@ -86,5 +86,9 @@ export class AudioSourceElement extends AudioNodeElement {
 
   async _suspend() {}
 
+  async _rollbackAudioCandidate() {
+    await this._suspend();
+  }
+
   async _close() {}
 }

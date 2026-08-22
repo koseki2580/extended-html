@@ -410,7 +410,8 @@ export class AudioGraphRuntime {
   ) {
     for (const element of [...activatedSources].reverse()) {
       try {
-        await element._close();
+        if (this.#terminalRequested) await element._close();
+        else await element._rollbackAudioCandidate();
       } catch {
         // Candidate cleanup preserves the reconciliation error reported to the owner.
       }

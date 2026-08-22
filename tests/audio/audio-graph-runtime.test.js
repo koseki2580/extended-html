@@ -3,6 +3,7 @@ import {
   AudioNodeElement,
   AudioSourceElement,
 } from "../../src/audio/audio-node-element.js";
+import { AudioInputMicElement } from "../../src/audio/audio-input-mic.js";
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -45,6 +46,7 @@ class RuntimeSourceElement extends AudioSourceElement {
   connected = async () => {};
   suspend = async () => {};
   close = async () => {};
+  rollbackCandidate = async () => this.suspend();
 
   _createAudioNode() {
     if (this.nativeNode === null) {
@@ -68,6 +70,10 @@ class RuntimeSourceElement extends AudioSourceElement {
   _close() {
     return this.close();
   }
+
+  _rollbackAudioCandidate() {
+    return this.rollbackCandidate();
+  }
 }
 
 if (!customElements.get("test-runtime-node")) {
@@ -76,6 +82,21 @@ if (!customElements.get("test-runtime-node")) {
 if (!customElements.get("test-runtime-source")) {
   customElements.define("test-runtime-source", RuntimeSourceElement);
 }
+if (!customElements.get("test-runtime-mic")) {
+  customElements.define("test-runtime-mic", AudioInputMicElement);
+}
+
+const installMediaDevices = (getUserMedia) => {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia },
+  });
+  return () => {
+    if (descriptor) Object.defineProperty(navigator, "mediaDevices", descriptor);
+    else delete navigator.mediaDevices;
+  };
+};
 
 const createNativeNode = (name, events) => ({
   name,
@@ -729,7 +750,7 @@ describe("AudioGraphRuntime", () => {
     added.activate = async () => {
       throw new Error("new source failed");
     };
-    added.close = async () => fixture.events.push("close:added");
+    added.rollbackCandidate = async () => fixture.events.push("rollback:added");
     const candidate = {
       nodes: [
         ...fixture.plan.nodes,
@@ -750,7 +771,7 @@ describe("AudioGraphRuntime", () => {
     }
 
     assertEqual(rejected.message, "new source failed", "activation failure");
-    assert(fixture.events.includes("close:added"), "failed source closes");
+    assert(fixture.events.includes("rollback:added"), "failed source rolls back");
     assert(
       fixture.events.includes("disconnect:added->output"),
       "failed source edge is removed",
@@ -778,7 +799,7 @@ describe("AudioGraphRuntime", () => {
     added.nativeNode = createNativeNode("added", fixture.events);
     let resolveActivation;
     let connected = 0;
-    let closed = 0;
+    let rolledBack = 0;
     added.activate = () =>
       new Promise((resolve) => {
         resolveActivation = resolve;
@@ -786,8 +807,8 @@ describe("AudioGraphRuntime", () => {
     added.connected = async () => {
       connected += 1;
     };
-    added.close = async () => {
-      closed += 1;
+    added.rollbackCandidate = async () => {
+      rolledBack += 1;
     };
     const candidate = {
       nodes: [
@@ -812,9 +833,167 @@ describe("AudioGraphRuntime", () => {
 
     assertEqual(committed, false, "stale candidate is not committed");
     assertEqual(connected, 0, "stale source never reaches connected hook");
-    assertEqual(closed, 1, "stale source resource is cleaned");
+    assertEqual(rolledBack, 1, "stale source resource is rolled back");
     assertEqual(oldCloses, 0, "old sources remain running");
     assertEqual(added._getAudioOwner(), null, "stale source owner is released");
     assertEqual(runtime.state, "running", "old runtime stays running");
+  });
+
+  it("retries a stale added microphone with a fresh stream and commits one open", async () => {
+    const fixture = createFixture();
+    let existingCloses = 0;
+    fixture.first.close = async () => {
+      existingCloses += 1;
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+
+    const mic = document.createElement("test-runtime-mic");
+    const firstTrack = {
+      readyState: "live",
+      enabled: true,
+      stop() {
+        this.readyState = "ended";
+        fixture.events.push("stop:first-track");
+      },
+    };
+    const secondTrack = {
+      readyState: "live",
+      enabled: true,
+      stop() {
+        this.readyState = "ended";
+        fixture.events.push("stop:second-track");
+      },
+    };
+    const firstStream = { getTracks: () => [firstTrack] };
+    const secondStream = { getTracks: () => [secondTrack] };
+    let resolveFirstStream;
+    let requests = 0;
+    const restoreMediaDevices = installMediaDevices(() => {
+      requests += 1;
+      if (requests === 1) {
+        return new Promise((resolve) => {
+          resolveFirstStream = resolve;
+        });
+      }
+      return Promise.resolve(secondStream);
+    });
+    fixture.context.createMediaStreamSource = (stream) =>
+      createNativeNode(
+        stream === firstStream ? "stale-mic" : "committed-mic",
+        fixture.events,
+      );
+    let opens = 0;
+    let closes = 0;
+    let errors = 0;
+    mic.addEventListener("open", () => {
+      opens += 1;
+      fixture.events.push("open:mic");
+    });
+    mic.addEventListener("close", () => {
+      closes += 1;
+    });
+    mic.addEventListener("error", () => {
+      errors += 1;
+    });
+    const candidate = {
+      nodes: [
+        ...fixture.plan.nodes,
+        { element: mic, role: "source", rootSource: mic },
+      ],
+      edges: [...fixture.plan.edges, { from: mic, to: fixture.filter }],
+      sources: [
+        ...fixture.plan.sources,
+        { element: mic, role: "source", rootSource: mic },
+      ],
+    };
+    let current = true;
+
+    try {
+      const firstReconciliation = runtime.reconcile(candidate, {
+        isCurrent: () => current,
+      });
+      while (!resolveFirstStream) await Promise.resolve();
+      current = false;
+      resolveFirstStream(firstStream);
+
+      assertEqual(await firstReconciliation, false, "stale mic is not committed");
+      assertEqual(firstTrack.readyState, "ended", "provisional track is stopped");
+      assert(fixture.events.includes("disconnect:stale-mic"), "provisional node disconnects");
+      assertEqual(opens, 0, "stale mic emits no open");
+      assertEqual(closes, 0, "nonterminal rollback emits no close");
+      assertEqual(errors, 0, "stale mic emits no error");
+      assertEqual(existingCloses, 0, "existing sources remain running");
+
+      fixture.events.length = 0;
+      current = true;
+      assertEqual(await runtime.reconcile(candidate), true, "fresh mic commits");
+
+      assertEqual(requests, 2, "retry acquires a fresh stream");
+      assertEqual(secondTrack.readyState, "live", "committed track stays live");
+      assertEqual(opens, 1, "committed mic opens once");
+      assertEqual(closes, 0, "successful retry remains nonterminal");
+      assertEqual(errors, 0, "successful retry emits no error");
+      assert(
+        fixture.events.indexOf("connect:committed-mic->filter") <
+          fixture.events.indexOf("open:mic"),
+        "fresh node connects before open",
+      );
+      assertEqual(mic._getAudioOwner(), fixture.owner, "committed mic keeps owner");
+    } finally {
+      restoreMediaDevices();
+    }
+  });
+
+  it("uses terminal cleanup when close is requested during candidate activation", async () => {
+    const fixture = createFixture();
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    const added = document.createElement("test-runtime-source");
+    added.nativeNode = createNativeNode("added", fixture.events);
+    let resolveActivation;
+    let rollbacks = 0;
+    let closes = 0;
+    added.activate = () =>
+      new Promise((resolve) => {
+        resolveActivation = resolve;
+      });
+    added.rollbackCandidate = async () => {
+      rollbacks += 1;
+    };
+    added.close = async () => {
+      closes += 1;
+    };
+    const candidate = {
+      nodes: [
+        ...fixture.plan.nodes,
+        { element: added, role: "source", rootSource: added },
+      ],
+      edges: [...fixture.plan.edges, { from: added, to: fixture.output }],
+      sources: [
+        ...fixture.plan.sources,
+        { element: added, role: "source", rootSource: added },
+      ],
+    };
+    const result = runtime.reconcile(candidate).catch((error) => error);
+    while (!resolveActivation) await Promise.resolve();
+
+    runtime._requestTerminalClose();
+    resolveActivation();
+    const error = await result;
+
+    assertEqual(error.name, "InvalidStateError", "terminal request cancels candidate");
+    assertEqual(closes, 1, "candidate source closes terminally");
+    assertEqual(rollbacks, 0, "terminal request does not use reusable rollback");
+    await runtime.close();
   });
 });
