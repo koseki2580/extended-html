@@ -18,6 +18,14 @@ const GRAPH_ATTRIBUTES = [
   "gain",
 ];
 
+const CONFIGURATION_ATTRIBUTES = new Set([
+  "type",
+  "frequency",
+  "detune",
+  "q",
+  "gain",
+]);
+
 export class AudioContextElement extends AudioEventTargetElement {
   static audioEventTypes = ["statechange", "error"];
   static observedAttributes = ["onstatechange", "onerror"];
@@ -32,6 +40,8 @@ export class AudioContextElement extends AudioEventTargetElement {
   #observer;
   #reconciliationQueued = false;
   #mutationGeneration = 0;
+  #dirtyConfigurationElements = new Set();
+  #dirtyConfigurationGenerations = new Map();
   #handleNativeStateChange = (event) => {
     dispatchAudioEvent(this, "statechange", event, this);
     if (this.#closed && this.#nativeContext?.state === "closed") {
@@ -41,8 +51,8 @@ export class AudioContextElement extends AudioEventTargetElement {
 
   constructor() {
     super();
-    this.#observer = new MutationObserver(() => {
-      this.#mutationGeneration += 1;
+    this.#observer = new MutationObserver((records) => {
+      this.#recordMutations(records);
       this.#queueReconciliation();
     });
     this.#observer.observe(this, {
@@ -90,6 +100,8 @@ export class AudioContextElement extends AudioEventTargetElement {
     // Stop observing before any asynchronous cleanup so later DOM writes are ignored.
     this.#observer.disconnect();
     this.#reconciliationQueued = false;
+    this.#dirtyConfigurationElements.clear();
+    this.#dirtyConfigurationGenerations.clear();
     this.#runtime?._requestTerminalClose();
     this.#closePromise = this.#enqueue(() => this.#performClose());
     return this.#closePromise;
@@ -110,9 +122,14 @@ export class AudioContextElement extends AudioEventTargetElement {
   async #performResume() {
     try {
       if (this.#closed) throw closedError();
+      let initialPlan = null;
+      let configurationSnapshot = null;
       if (this.#runtime === null) {
         // Validation must complete before the first browser resource is created.
+        this.#recordMutations(this.#observer.takeRecords());
         const plan = buildAudioGraphPlan(this);
+        initialPlan = plan;
+        configurationSnapshot = this.#snapshotDirtyConfiguration();
         for (const { element } of plan.nodes) {
           element._validateAudioConfiguration();
         }
@@ -126,6 +143,9 @@ export class AudioContextElement extends AudioEventTargetElement {
         this.#runtime = new AudioGraphRuntime(this, this.#nativeContext, plan);
       }
       await this.#runtime.resume();
+      if (initialPlan !== null) {
+        this.#clearCommittedConfiguration(configurationSnapshot);
+      }
     } catch (error) {
       dispatchAudioEvent(this, "error", error, this);
       throw error;
@@ -170,17 +190,58 @@ export class AudioContextElement extends AudioEventTargetElement {
     if (this.#closed || this.#runtime === null) return;
     try {
       const generation = this.#mutationGeneration;
+      const configurationSnapshot = this.#snapshotDirtyConfiguration();
       const candidatePlan = buildAudioGraphPlan(this);
       for (const { element } of candidatePlan.nodes) {
         element._validateAudioConfiguration();
       }
-      await this.#runtime.reconcile(candidatePlan, {
+      const committed = await this.#runtime.reconcile(candidatePlan, {
         isCurrent: () =>
           !this.#closed && generation === this.#mutationGeneration,
+        dirtyNodes: new Set(configurationSnapshot.keys()),
       });
+      if (committed) {
+        this.#clearCommittedConfiguration(configurationSnapshot);
+      }
     } catch (error) {
       if (!this.#closed) dispatchAudioEvent(this, "error", error, this);
       throw error;
+    }
+  }
+
+  #recordMutations(records) {
+    if (records.length === 0) return;
+    this.#mutationGeneration += 1;
+    for (const record of records) {
+      if (
+        record.type === "attributes" &&
+        CONFIGURATION_ATTRIBUTES.has(record.attributeName)
+      ) {
+        this.#dirtyConfigurationElements.add(record.target);
+        this.#dirtyConfigurationGenerations.set(
+          record.target,
+          this.#mutationGeneration,
+        );
+      }
+    }
+  }
+
+  #snapshotDirtyConfiguration() {
+    return new Map(
+      [...this.#dirtyConfigurationElements].map((element) => [
+        element,
+        this.#dirtyConfigurationGenerations.get(element),
+      ]),
+    );
+  }
+
+  #clearCommittedConfiguration(snapshot) {
+    for (const [element, generation] of snapshot) {
+      if (this.#dirtyConfigurationGenerations.get(element) !== generation) {
+        continue;
+      }
+      this.#dirtyConfigurationElements.delete(element);
+      this.#dirtyConfigurationGenerations.delete(element);
     }
   }
 

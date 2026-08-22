@@ -80,7 +80,10 @@ export class AudioGraphRuntime {
     return this.#closePromise;
   }
 
-  async reconcile(candidatePlan, { isCurrent = () => true } = {}) {
+  async reconcile(
+    candidatePlan,
+    { isCurrent = () => true, dirtyNodes = new Set() } = {},
+  ) {
     if (this.#state === "closed") throw closedError();
     if (this.#terminalRequested) throw closingError();
     if (!isCurrent()) return false;
@@ -115,7 +118,13 @@ export class AudioGraphRuntime {
     try {
       this.#throwIfCandidateStale(isCurrent);
       for (const { element } of candidatePlan.nodes) {
-        if (!previousElements.has(element) || !this.#nodes.has(element)) continue;
+        if (
+          !previousElements.has(element) ||
+          !this.#nodes.has(element) ||
+          !dirtyNodes.has(element)
+        ) {
+          continue;
+        }
         configureNode(element);
       }
 

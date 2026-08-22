@@ -544,6 +544,22 @@ describe("AudioContextElement", () => {
     );
   });
 
+  it("preserves imperative AudioParam values during unrelated DOM reconciliation", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const filter = context.querySelector("audio-biquad-filter");
+    filter.frequency.value = 777;
+
+    const unrelated = document.createElement("span");
+    unrelated.textContent = "ignored metadata";
+    filter.append(unrelated);
+    await flushReconciliation();
+
+    assertEqual(filter.frequency.value, 777, "imperative AudioParam is preserved");
+    assertEqual(context.state, "running", "non-audio child is ignored by the graph");
+  });
+
   it("reconciles added and removed running sources without restarting unchanged sources", async () => {
     const { context, file: first } = createElement();
     document.body.append(context);

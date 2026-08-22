@@ -642,7 +642,9 @@ describe("AudioGraphRuntime", () => {
 
     let rejected;
     try {
-      await runtime.reconcile(candidate);
+      await runtime.reconcile(candidate, {
+        dirtyNodes: new Set([fixture.filter]),
+      });
     } catch (error) {
       rejected = error;
     }
