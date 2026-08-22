@@ -25,12 +25,28 @@ const openFixture = async (page) => {
 
 const snapshot = (page) => page.evaluate(() => globalThis.audioFixture.snapshot());
 
+const sortNativeConnections = (items) =>
+  [...items].sort((left, right) =>
+    [left.source, left.destination, left.sourceId, left.destinationId]
+      .join(":")
+      .localeCompare(
+        [right.source, right.destination, right.sourceId, right.destinationId].join(
+          ":",
+        ),
+      ),
+  );
+
 const observeWebAudio = async (page) => {
   const session = await page.context().newCDPSession(page);
+  const contextIds = new Set();
   const nodes = new Map();
   const connections = [];
 
+  session.on("WebAudio.contextCreated", ({ context }) => {
+    contextIds.add(context.contextId);
+  });
   session.on("WebAudio.audioNodeCreated", ({ node }) => {
+    contextIds.add(node.contextId);
     nodes.set(node.nodeId, node);
   });
   session.on("WebAudio.nodesConnected", (connection) => {
@@ -44,11 +60,25 @@ const observeWebAudio = async (page) => {
   };
 
   return {
-    connectionTypes: () =>
-      connections.map(({ sourceId, destinationId }) => ({
-        source: constructorName(sourceId),
-        destination: constructorName(destinationId),
-        destinationId,
+    graphs: () =>
+      [...contextIds].map((contextId) => ({
+        contextId,
+        nodes: [...nodes.values()]
+          .filter((node) => node.contextId === contextId)
+          .map((node) => ({ id: node.nodeId, type: constructorName(node.nodeId) }))
+          .sort((left, right) =>
+            `${left.type}:${left.id}`.localeCompare(`${right.type}:${right.id}`),
+          ),
+        connections: sortNativeConnections(
+          connections
+            .filter((connection) => connection.contextId === contextId)
+            .map(({ sourceId, destinationId }) => ({
+              source: constructorName(sourceId),
+              destination: constructorName(destinationId),
+              sourceId,
+              destinationId,
+            })),
+        ),
       })),
     async close() {
       await session.send("WebAudio.disable");
@@ -98,24 +128,47 @@ test("one context resume starts the nested microphone and file graph in DOM orde
       },
     });
 
-    const connections = webAudio.connectionTypes();
-    const filterConnections = connections.filter(
-      ({ destination }) => destination === "BiquadFilterNode",
+    const requiredNodeTypes = [
+      "AudioDestinationNode",
+      "BiquadFilterNode",
+      "MediaElementAudioSourceNode",
+      "MediaStreamAudioSourceNode",
+    ];
+    const targetGraphs = webAudio.graphs().filter(({ nodes }) =>
+      requiredNodeTypes.every((type) => nodes.some((node) => node.type === type)),
     );
-    expect(filterConnections).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ source: "MediaStreamAudioSourceNode" }),
-        expect.objectContaining({ source: "MediaElementAudioSourceNode" }),
-      ]),
-    );
-    expect(new Set(filterConnections.map(({ destinationId }) => destinationId)).size)
-      .toBe(1);
-    expect(connections).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
+    expect(targetGraphs).toHaveLength(1);
+    const graph = targetGraphs[0];
+    const nodeId = (type) => {
+      const matches = graph.nodes.filter((node) => node.type === type);
+      expect(matches, `${type} node in target AudioContext`).toHaveLength(1);
+      return matches[0].id;
+    };
+    const destinationId = nodeId("AudioDestinationNode");
+    const filterId = nodeId("BiquadFilterNode");
+    const fileId = nodeId("MediaElementAudioSourceNode");
+    const micId = nodeId("MediaStreamAudioSourceNode");
+    expect(graph.connections).toHaveLength(3);
+    expect(graph.connections).toEqual(
+      sortNativeConnections([
+        {
+          source: "MediaStreamAudioSourceNode",
+          destination: "BiquadFilterNode",
+          sourceId: micId,
+          destinationId: filterId,
+        },
+        {
+          source: "MediaElementAudioSourceNode",
+          destination: "BiquadFilterNode",
+          sourceId: fileId,
+          destinationId: filterId,
+        },
+        {
           source: "BiquadFilterNode",
           destination: "AudioDestinationNode",
-        }),
+          sourceId: filterId,
+          destinationId,
+        },
       ]),
     );
     expect(browserErrors).toEqual([]);
