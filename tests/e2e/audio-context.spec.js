@@ -25,45 +25,103 @@ const openFixture = async (page) => {
 
 const snapshot = (page) => page.evaluate(() => globalThis.audioFixture.snapshot());
 
+const observeWebAudio = async (page) => {
+  const session = await page.context().newCDPSession(page);
+  const nodes = new Map();
+  const connections = [];
+
+  session.on("WebAudio.audioNodeCreated", ({ node }) => {
+    nodes.set(node.nodeId, node);
+  });
+  session.on("WebAudio.nodesConnected", (connection) => {
+    connections.push(connection);
+  });
+  await session.send("WebAudio.enable");
+
+  const constructorName = (nodeId) => {
+    const nodeType = nodes.get(nodeId)?.nodeType;
+    return nodeType ? `${nodeType}Node` : null;
+  };
+
+  return {
+    connectionTypes: () =>
+      connections.map(({ sourceId, destinationId }) => ({
+        source: constructorName(sourceId),
+        destination: constructorName(destinationId),
+        destinationId,
+      })),
+    async close() {
+      await session.send("WebAudio.disable");
+      await session.detach();
+    },
+  };
+};
+
 test("one context resume starts the nested microphone and file graph in DOM order", async ({
   page,
 }) => {
-  const browserErrors = await openFixture(page);
+  const webAudio = await observeWebAudio(page);
 
-  await page.evaluate(() => globalThis.audioFixture.context.resume());
-  await page.waitForFunction(
-    () =>
-      globalThis.audioFixture.events.some(({ node, type }) =>
-        node === "music" && (type === "play" || type === "playing"),
-      ) && globalThis.audioFixture.context.state === "running",
-  );
+  try {
+    const browserErrors = await openFixture(page);
+    await page.evaluate(() => globalThis.audioFixture.context.resume());
+    await page.waitForFunction(
+      () =>
+        globalThis.audioFixture.events.some(({ node, type }) =>
+          node === "music" && (type === "play" || type === "playing"),
+        ) && globalThis.audioFixture.context.state === "running",
+    );
 
-  const state = await snapshot(page);
-  expect(state.contextState).toBe("running");
-  expect(state.filePaused).toBe(false);
-  expect(state.events.findIndex(({ node, type }) => node === "mic" && type === "open"))
-    .toBeGreaterThanOrEqual(0);
-  expect(state.events.findIndex(({ node, type }) => node === "music" && type === "play"))
-    .toBeGreaterThan(state.events.findIndex(({ node, type }) => node === "mic" && type === "open"));
+    const state = await snapshot(page);
+    expect(state.contextState).toBe("running");
+    expect(state.filePaused).toBe(false);
+    expect(state.events.findIndex(({ node, type }) => node === "mic" && type === "open"))
+      .toBeGreaterThanOrEqual(0);
+    expect(state.events.findIndex(({ node, type }) => node === "music" && type === "play"))
+      .toBeGreaterThan(state.events.findIndex(({ node, type }) => node === "mic" && type === "open"));
 
-  const micOpen = state.events.find(({ node, type }) => node === "mic" && type === "open");
-  expect(micOpen).toMatchObject({
-    dataKind: "MediaStream",
-    contextState: "running",
-    metadata: { contextId: "audio", nodeId: "mic", nodeName: "audio-input-mic" },
-  });
-  expect(micOpen.trackStates).toEqual([{ enabled: true, readyState: "live" }]);
+    const micOpen = state.events.find(({ node, type }) => node === "mic" && type === "open");
+    expect(micOpen).toMatchObject({
+      dataKind: "MediaStream",
+      contextState: "running",
+      metadata: { contextId: "audio", nodeId: "mic", nodeName: "audio-input-mic" },
+    });
+    expect(micOpen.trackStates).toEqual([{ enabled: true, readyState: "live" }]);
 
-  const filePlay = state.events.find(({ node, type }) => node === "music" && type === "play");
-  expect(filePlay).toMatchObject({
-    dataKind: "Event",
-    metadata: {
-      contextId: "audio",
-      nodeId: "music",
-      nodeName: "audio-input-file",
-    },
-  });
-  expect(browserErrors).toEqual([]);
+    const filePlay = state.events.find(({ node, type }) => node === "music" && type === "play");
+    expect(filePlay).toMatchObject({
+      dataKind: "Event",
+      metadata: {
+        contextId: "audio",
+        nodeId: "music",
+        nodeName: "audio-input-file",
+      },
+    });
+
+    const connections = webAudio.connectionTypes();
+    const filterConnections = connections.filter(
+      ({ destination }) => destination === "BiquadFilterNode",
+    );
+    expect(filterConnections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "MediaStreamAudioSourceNode" }),
+        expect.objectContaining({ source: "MediaElementAudioSourceNode" }),
+      ]),
+    );
+    expect(new Set(filterConnections.map(({ destinationId }) => destinationId)).size)
+      .toBe(1);
+    expect(connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "BiquadFilterNode",
+          destination: "AudioDestinationNode",
+        }),
+      ]),
+    );
+    expect(browserErrors).toEqual([]);
+  } finally {
+    await webAudio.close();
+  }
 });
 
 test("suspend and resume pause and restart all sources through the context", async ({ page }) => {
