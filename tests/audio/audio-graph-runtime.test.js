@@ -200,16 +200,32 @@ describe("AudioGraphRuntime", () => {
     assert(activation < connection && connection < opened, "mic activation/connect/open order");
   });
 
-  it("rolls back activated sources and native resources in reverse on failure", async () => {
+  it("rolls back sources nonterminally in reverse and permits a later resume", async () => {
     const fixture = createFixture();
     const failure = new Error("second failed");
-    fixture.first.activate = async () => fixture.events.push("activate:first");
-    fixture.first.close = async () => fixture.events.push("close:first");
-    fixture.second.activate = async () => {
-      fixture.events.push("activate:second");
-      throw failure;
+    let firstClosed = false;
+    let secondClosed = false;
+    let secondAttempts = 0;
+    fixture.first.activate = async () => {
+      if (firstClosed) throw new Error("first is terminal");
+      fixture.events.push("activate:first");
     };
-    fixture.second.close = async () => fixture.events.push("close:second");
+    fixture.first.suspend = async () => fixture.events.push("suspend:first");
+    fixture.first.close = async () => {
+      firstClosed = true;
+      fixture.events.push("close:first");
+    };
+    fixture.second.activate = async () => {
+      if (secondClosed) throw new Error("second is terminal");
+      fixture.events.push("activate:second");
+      secondAttempts += 1;
+      if (secondAttempts === 1) throw failure;
+    };
+    fixture.second.suspend = async () => fixture.events.push("suspend:second");
+    fixture.second.close = async () => {
+      secondClosed = true;
+      fixture.events.push("close:second");
+    };
     const runtime = new AudioGraphRuntime(
       fixture.owner,
       fixture.context,
@@ -225,18 +241,42 @@ describe("AudioGraphRuntime", () => {
 
     assertEqual(rejected, failure, "original activation error");
     assert(
-      fixture.events.indexOf("close:second") <
-        fixture.events.indexOf("close:first"),
-      "sources close in reverse",
+      fixture.events.indexOf("suspend:second") <
+        fixture.events.indexOf("suspend:first"),
+      "sources suspend in reverse",
     );
     assert(
-      fixture.events.indexOf("close:first") <
+      fixture.events.indexOf("suspend:first") <
         fixture.events.lastIndexOf("context:suspend"),
       "native context suspends after source rollback",
     );
-    assertEqual(fixture.first._getAudioOwner(), null, "source owner is cleared");
-    assertEqual(fixture.filter._getAudioOwner(), null, "processor owner is cleared");
+    assertEqual(firstClosed, false, "first source remains resumable");
+    assertEqual(secondClosed, false, "failed source remains resumable");
+    assertEqual(
+      fixture.first._getAudioOwner(),
+      fixture.owner,
+      "source ownership is retained for retry",
+    );
+    assertEqual(
+      fixture.filter._getAudioOwner(),
+      fixture.owner,
+      "processor ownership is retained for retry",
+    );
+    assert(
+      fixture.events.some((event) => event.startsWith("disconnect:")),
+      "failed graph connections are released",
+    );
     assertEqual(runtime.state, "suspended", "runtime reports suspended");
+
+    await runtime.resume();
+
+    assertEqual(secondAttempts, 2, "failed source is retried");
+    assertEqual(
+      fixture.events.filter((event) => event === "connect:first->filter").length,
+      2,
+      "released graph connections are restored",
+    );
+    assertEqual(runtime.state, "running", "retry starts the graph");
   });
 
   it("suspends sources in reverse and closes terminal resources once", async () => {

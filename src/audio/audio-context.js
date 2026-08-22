@@ -19,10 +19,13 @@ export class AudioContextElement extends AudioEventTargetElement {
   #pendingKind = null;
   #pendingPromise = null;
   #closePromise = null;
+  #handleNativeStateChange = (event) => {
+    dispatchAudioEvent(this, "statechange", event, this);
+  };
 
   get state() {
-    if (this.#closed) return "closed";
-    return this.#runtime?.state ?? "suspended";
+    if (this.#nativeContext !== null) return this.#nativeContext.state;
+    return this.#closed ? "closed" : "suspended";
   }
 
   get currentTime() {
@@ -78,13 +81,14 @@ export class AudioContextElement extends AudioEventTargetElement {
         const Context = globalThis.AudioContext ?? globalThis.webkitAudioContext;
         if (typeof Context !== "function") throw unavailableError();
         this.#nativeContext = new Context();
+        this.#nativeContext.addEventListener(
+          "statechange",
+          this.#handleNativeStateChange,
+        );
         this.#runtime = new AudioGraphRuntime(this, this.#nativeContext, plan);
       }
-      if (this.#runtime.state === "running") return;
       await this.#runtime.resume();
-      this.#dispatchStateChange();
     } catch (error) {
-      if (this.#runtime !== null) this.#dispatchStateChange();
       dispatchAudioEvent(this, "error", error, this);
       throw error;
     }
@@ -94,7 +98,6 @@ export class AudioContextElement extends AudioEventTargetElement {
     try {
       if (this.#runtime === null || this.#runtime.state === "suspended") return;
       await this.#runtime.suspend();
-      this.#dispatchStateChange();
     } catch (error) {
       dispatchAudioEvent(this, "error", error, this);
       throw error;
@@ -104,15 +107,15 @@ export class AudioContextElement extends AudioEventTargetElement {
   async #performClose() {
     try {
       if (this.#runtime !== null) await this.#runtime.close();
-      this.#dispatchStateChange();
     } catch (error) {
       dispatchAudioEvent(this, "error", error, this);
       throw error;
+    } finally {
+      this.#nativeContext?.removeEventListener(
+        "statechange",
+        this.#handleNativeStateChange,
+      );
     }
-  }
-
-  #dispatchStateChange() {
-    dispatchAudioEvent(this, "statechange", this.state, this);
   }
 
   #trackPending(kind, operation) {

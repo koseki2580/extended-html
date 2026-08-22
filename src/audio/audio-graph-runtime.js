@@ -28,7 +28,9 @@ export class AudioGraphRuntime {
 
   resume() {
     if (this.#state === "closed") return Promise.reject(closedError());
-    if (this.#state === "running") return Promise.resolve();
+    if (this.#state === "running" && this.#context.state === "running") {
+      return Promise.resolve();
+    }
     if (this.#resumePromise !== null) return this.#resumePromise;
 
     const operation = this.#performResume();
@@ -71,9 +73,16 @@ export class AudioGraphRuntime {
   }
 
   async #performResume() {
+    if (this.#state === "running") {
+      await this.#context.resume();
+      return;
+    }
+
     const activated = [];
     try {
       this.#initialize();
+      // A prior failed attempt may have released edges while retaining reusable nodes.
+      this.#applyAvailableEdges();
       await this.#context.resume();
 
       for (const { element } of this.#plan.sources) {
@@ -194,20 +203,18 @@ export class AudioGraphRuntime {
   async #rollback(activated) {
     for (const element of [...activated].reverse()) {
       try {
-        await element._close();
+        await element._suspend();
       } catch {
         // Rollback preserves the activation failure reported to the caller.
       }
     }
     this.#disconnectGraph();
-    this.#releaseNodes();
     try {
       await this.#context.suspend();
     } catch {
       // Rollback preserves the activation failure reported to the caller.
     }
     this.#state = "suspended";
-    this.#initialized = false;
   }
 
   #disconnectGraph() {

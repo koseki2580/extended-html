@@ -202,7 +202,48 @@ describe("AudioContextElement", () => {
     );
   });
 
-  it("wraps native statechange and lifecycle errors with context metadata", async () => {
+  it("proxies and wraps native state changes with context metadata", async () => {
+    const { context } = createElement();
+    const states = [];
+    context.onstatechange = (event) => states.push(event);
+    await context.resume();
+    const native = FakeAudioContext.instances[0];
+    states.length = 0;
+
+    native.state = "interrupted";
+    const nativeEvent = new Event("statechange");
+    native.dispatchEvent(nativeEvent);
+
+    assertEqual(context.state, "interrupted", "state follows the native context");
+    assertEqual(states.length, 1, "one wrapped native event");
+    assertEqual(states[0].detail.data, nativeEvent, "native event data");
+    assertEqual(states[0].detail.metadata.contextId, "audio", "context metadata");
+    assertEqual(states[0].detail.metadata.nodeId, "audio", "node metadata");
+    assertEqual(states[0].detail.metadata.nodeName, "audio-context", "node name");
+  });
+
+  it("resumes a natively interrupted context without replaying active sources", async () => {
+    const { context, file } = createElement();
+    await context.resume();
+    const native = FakeAudioContext.instances[0];
+    let plays = 0;
+    file._getMediaElement().play = async () => {
+      plays += 1;
+    };
+    native.state = "interrupted";
+
+    await context.resume();
+
+    assertEqual(context.state, "running", "native context resumes");
+    assertEqual(plays, 0, "already active file is not replayed");
+    assertEqual(
+      native.events.filter((event) => event === "resume").length,
+      2,
+      "native resume is invoked again",
+    );
+  });
+
+  it("wraps lifecycle errors without synthesizing state changes", async () => {
     const { context, file } = createElement();
     const failure = new Error("play failed");
     file._getMediaElement().play = async () => {
@@ -218,8 +259,9 @@ describe("AudioContextElement", () => {
     const rejected = await assertRejects(context.resume(), "Error", "play failed");
 
     assertEqual(rejected, failure, "original error is preserved");
-    assert(states.length >= 1, "native state change is wrapped");
-    assertEqual(states.at(-1).detail.data, "suspended", "rolled back state data");
+    assertEqual(states.length, 2, "native resume and rollback changes are wrapped");
+    assert(states.every((event) => event.detail.data instanceof Event), "native event data");
+    assertEqual(context.state, "suspended", "state follows native rollback");
     assertEqual(states[0].detail.metadata.contextId, "audio", "state context metadata");
     assertEqual(states[0].detail.metadata.nodeId, "audio", "state node metadata");
     assertEqual(states[0].detail.metadata.nodeName, "audio-context", "state node name");
