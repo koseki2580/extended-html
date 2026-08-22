@@ -128,6 +128,9 @@ const createElement = () => {
   return { context, file };
 };
 
+const flushReconciliation = () =>
+  new Promise((resolve) => setTimeout(resolve, 0));
+
 describe("AudioContextElement", () => {
   beforeEach(installFakeAudioContext);
   afterEach(() => {
@@ -391,5 +394,195 @@ describe("AudioContextElement", () => {
     assertEqual(secondPlays, 0, "later file never starts");
     assert(firstPauses >= 1, "late first playback is released");
     assertEqual(context.state, "closed", "removal close completes");
+  });
+
+  it("batches same-turn graph mutations and applies only the final valid candidate", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+    const source = context.querySelector("audio-input-file");
+    const second = document.createElement("audio-input-file");
+    second.innerHTML = `
+      <audio-biquad-filter id="later"><audio-output></audio-output></audio-biquad-filter>`;
+    second._getMediaElement().play = async () => {};
+    second._getMediaElement().pause = () => {};
+
+    source.setAttribute("to", "later");
+    context.append(second);
+    await flushReconciliation();
+
+    assertEqual(errors.length, 0, "transient invalid state is not reconciled");
+    assertEqual(
+      FakeAudioContext.instances[0].events.filter(
+        (event) => event === "connect:file->filter",
+      ).length,
+      3,
+      "one structural edge per source plus the final cross-tree edge",
+    );
+  });
+
+  it("updates live filter configuration and reports invalid candidates without stopping", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const filter = context.querySelector("audio-biquad-filter");
+    const native = FakeAudioContext.instances[0];
+    const nodeCreations = FakeAudioContext.nodeCreations;
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+
+    native.events.length = 0;
+    filter.setAttribute("frequency", "900");
+    await flushReconciliation();
+    assertEqual(filter.frequency.value, 900, "valid live value is applied");
+    assertEqual(
+      FakeAudioContext.nodeCreations,
+      nodeCreations,
+      "live configuration reuses native nodes",
+    );
+    assert(
+      !native.events.some(
+        (event) => event.startsWith("connect:") || event.startsWith("disconnect:"),
+      ),
+      "live configuration does not replace graph edges",
+    );
+
+    filter.setAttribute("frequency", "12px");
+    await flushReconciliation();
+    assertEqual(filter.frequency.value, 900, "invalid live value is preserved");
+    assertEqual(errors.length, 1, "invalid candidate reports one error");
+    assertEqual(errors[0].name, "SyntaxError", "wrapped validation error");
+    assertEqual(context.state, "running", "recoverable error keeps context running");
+
+    filter.setAttribute("frequency", "1200");
+    await flushReconciliation();
+    assertEqual(filter.frequency.value, 1200, "observer recovers after failure");
+    assertEqual(errors.length, 1, "valid recovery adds no error");
+  });
+
+  it("reconciles added and removed running sources without restarting unchanged sources", async () => {
+    const { context, file: first } = createElement();
+    document.body.append(context);
+    let firstPlays = 0;
+    let firstPauses = 0;
+    first._getMediaElement().play = async () => {
+      firstPlays += 1;
+    };
+    first._getMediaElement().pause = () => {
+      firstPauses += 1;
+    };
+    await context.resume();
+
+    const second = document.createElement("audio-input-file");
+    second.append(document.createElement("audio-output"));
+    let secondPlays = 0;
+    let secondPauses = 0;
+    second._getMediaElement().play = async () => {
+      secondPlays += 1;
+    };
+    second._getMediaElement().pause = () => {
+      secondPauses += 1;
+    };
+    context.append(second);
+    await flushReconciliation();
+
+    assertEqual(firstPlays, 1, "existing source is not replayed");
+    assertEqual(secondPlays, 1, "new source starts");
+
+    second.remove();
+    await flushReconciliation();
+    assertEqual(secondPauses, 1, "removed source closes");
+    assertEqual(firstPauses, 0, "existing source keeps running");
+    assertEqual(context.state, "running", "context remains running");
+  });
+
+  it("preserves the last valid graph after an invalid live mutation", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const native = FakeAudioContext.instances[0];
+    const source = context.querySelector("audio-input-file");
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+    native.events.length = 0;
+
+    source.setAttribute("to", "missing");
+    await flushReconciliation();
+
+    assertEqual(errors.length, 1, "invalid candidate reports an error");
+    assertEqual(errors[0].name, "SyntaxError", "graph validation error");
+    assert(
+      !native.events.some((event) => event.startsWith("disconnect:")),
+      "old graph remains connected",
+    );
+    assertEqual(context.state, "running", "old graph keeps running");
+
+    const second = document.createElement("audio-input-file");
+    second.innerHTML = `
+      <audio-biquad-filter id="missing"><audio-output></audio-output></audio-biquad-filter>`;
+    second._getMediaElement().play = async () => {};
+    second._getMediaElement().pause = () => {};
+    context.append(second);
+    await flushReconciliation();
+
+    assertEqual(errors.length, 1, "valid follow-up adds no error");
+    assert(
+      native.events.filter((event) => event === "connect:file->filter").length >= 2,
+      "observer applies a valid candidate after failure",
+    );
+  });
+
+  it("reports a new-source activation failure while old sources keep running", async () => {
+    const { context, file: first } = createElement();
+    document.body.append(context);
+    let firstPauses = 0;
+    first._getMediaElement().pause = () => {
+      firstPauses += 1;
+    };
+    await context.resume();
+    const native = FakeAudioContext.instances[0];
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+    native.events.length = 0;
+
+    const failing = document.createElement("audio-input-file");
+    failing.append(document.createElement("audio-output"));
+    failing._getMediaElement().play = async () => {
+      throw new Error("added playback failed");
+    };
+    let failingPauses = 0;
+    failing._getMediaElement().pause = () => {
+      failingPauses += 1;
+    };
+    context.append(failing);
+    await flushReconciliation();
+
+    assertEqual(errors.length, 1, "activation failure is reported");
+    assertEqual(errors[0].message, "added playback failed", "original failure data");
+    assertEqual(firstPauses, 0, "old source is not stopped");
+    assertEqual(failingPauses, 1, "failed source is cleaned");
+    assertEqual(context.state, "running", "old graph remains running");
+    assert(
+      !native.events.includes("disconnect:file->filter"),
+      "old graph edge is preserved",
+    );
+  });
+
+  it("disconnects its observer synchronously when terminal close starts", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+
+    const closing = context.close();
+    context.querySelector("audio-input-file").setAttribute("to", "missing");
+    await closing;
+    await flushReconciliation();
+
+    assertEqual(errors.length, 0, "post-close mutation is ignored");
+    assertEqual(context.state, "closed", "context stays closed");
   });
 });

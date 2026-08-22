@@ -4,15 +4,14 @@ const closedError = () =>
 const closingError = () =>
   new DOMException("Audio context is closing", "InvalidStateError");
 
-const edgeKey = (edge, elementIndexes) =>
-  `${elementIndexes.get(edge.from)}:${elementIndexes.get(edge.to)}`;
-
 export class AudioGraphRuntime {
   #owner;
   #context;
   #plan;
   #nodes = new Map();
   #appliedEdges = new Map();
+  #elementIds = new WeakMap();
+  #nextElementId = 0;
   #initialized = false;
   #state = "suspended";
   #resumePromise = null;
@@ -78,6 +77,88 @@ export class AudioGraphRuntime {
     return this.#closePromise;
   }
 
+  async reconcile(candidatePlan) {
+    if (this.#state === "closed") throw closedError();
+    if (this.#terminalRequested) throw closingError();
+
+    const previousPlan = this.#plan;
+    const previousElements = new Set(
+      previousPlan.nodes.map(({ element }) => element),
+    );
+    const candidateElements = new Set(
+      candidatePlan.nodes.map(({ element }) => element),
+    );
+    const addedNodes = candidatePlan.nodes.filter(
+      ({ element }) => !previousElements.has(element),
+    );
+    const addedSources = candidatePlan.sources.filter(
+      ({ element }) => !previousElements.has(element),
+    );
+    const addedEdgeKeys = [];
+    const activatedSources = [];
+
+    try {
+      for (const { element, role } of addedNodes) {
+        element._setAudioOwner(this.#owner);
+        if (role === "source") {
+          try {
+            this.#createAndAttachNode(element);
+          } catch (error) {
+            if (error.name !== "NotSupportedError") throw error;
+          }
+        } else {
+          this.#createAndAttachNode(element);
+        }
+      }
+
+      this.#applyAvailableEdges(candidatePlan, addedEdgeKeys);
+      if (this.#state === "running") {
+        for (const { element } of addedSources) {
+          this.#throwIfTerminalRequested();
+          activatedSources.push(element);
+          await element._activate(this.#context);
+          this.#throwIfTerminalRequested();
+          this.#captureActivatedNode(element);
+          this.#applyAvailableEdges(candidatePlan, addedEdgeKeys);
+          this.#throwIfTerminalRequested();
+          await element._connected();
+        }
+      }
+    } catch (error) {
+      await this.#rollbackCandidate(
+        activatedSources,
+        addedEdgeKeys,
+        addedNodes,
+      );
+      throw error;
+    }
+
+    const candidateEdgeKeys = new Set(
+      candidatePlan.edges.map((edge) => this.#edgeKey(edge)),
+    );
+    for (const [key, edge] of [...this.#appliedEdges]) {
+      if (candidateEdgeKeys.has(key)) continue;
+      this.#disconnectEdge(key, edge);
+    }
+
+    this.#plan = candidatePlan;
+    let firstCleanupError = null;
+    const removedNodes = [...previousPlan.nodes]
+      .reverse()
+      .filter(({ element }) => !candidateElements.has(element));
+    for (const node of removedNodes) {
+      if (node.role === "source") {
+        try {
+          await node.element._close();
+        } catch (error) {
+          firstCleanupError ??= error;
+        }
+      }
+      this.#releaseNode(node);
+    }
+    if (firstCleanupError !== null) throw firstCleanupError;
+  }
+
   _requestTerminalClose() {
     this.#terminalRequested = true;
   }
@@ -94,7 +175,7 @@ export class AudioGraphRuntime {
     try {
       this.#initialize();
       // A prior failed attempt may have released edges while retaining reusable nodes.
-      this.#applyAvailableEdges();
+      this.#applyAvailableEdges(this.#plan);
       await this.#context.resume();
       this.#throwIfTerminalRequested();
 
@@ -105,7 +186,7 @@ export class AudioGraphRuntime {
         await element._activate(this.#context);
         this.#throwIfTerminalRequested();
         this.#captureActivatedNode(element);
-        this.#applyAvailableEdges();
+        this.#applyAvailableEdges(this.#plan);
         this.#throwIfTerminalRequested();
         await element._connected();
         this.#throwIfTerminalRequested();
@@ -185,7 +266,7 @@ export class AudioGraphRuntime {
           this.#createAndAttachNode(element);
         }
       }
-      this.#applyAvailableEdges();
+      this.#applyAvailableEdges(this.#plan);
       this.#initialized = true;
     } catch (error) {
       this.#disconnectGraph();
@@ -205,19 +286,53 @@ export class AudioGraphRuntime {
     this.#nodes.set(element, element._getAudioNode());
   }
 
-  #applyAvailableEdges() {
-    const indexes = new Map(
-      this.#plan.nodes.map(({ element }, index) => [element, index]),
-    );
-    for (const edge of this.#plan.edges) {
+  #applyAvailableEdges(plan, addedEdgeKeys = null) {
+    for (const edge of plan.edges) {
       const from = this.#nodes.get(edge.from);
       const to = this.#nodes.get(edge.to);
       if (!from || !to) continue;
-      const key = edgeKey(edge, indexes);
+      const key = this.#edgeKey(edge);
       if (this.#appliedEdges.has(key)) continue;
-      from.connect(to);
+      try {
+        from.connect(to);
+      } catch (error) {
+        try {
+          from.disconnect(to);
+        } catch {
+          // A failed native connection may not have created an edge to remove.
+        }
+        throw error;
+      }
       this.#appliedEdges.set(key, { from, to });
+      addedEdgeKeys?.push(key);
     }
+  }
+
+  #edgeKey({ from, to }) {
+    return `${this.#elementId(from)}:${this.#elementId(to)}`;
+  }
+
+  #elementId(element) {
+    if (!this.#elementIds.has(element)) {
+      this.#elementIds.set(element, this.#nextElementId);
+      this.#nextElementId += 1;
+    }
+    return this.#elementIds.get(element);
+  }
+
+  async #rollbackCandidate(activatedSources, addedEdgeKeys, addedNodes) {
+    for (const element of [...activatedSources].reverse()) {
+      try {
+        await element._close();
+      } catch {
+        // Candidate cleanup preserves the reconciliation error reported to the owner.
+      }
+    }
+    for (const key of [...addedEdgeKeys].reverse()) {
+      const edge = this.#appliedEdges.get(key);
+      if (edge) this.#disconnectEdge(key, edge);
+    }
+    for (const node of [...addedNodes].reverse()) this.#releaseNode(node);
   }
 
   async #rollback(activated) {
@@ -238,14 +353,18 @@ export class AudioGraphRuntime {
   }
 
   #disconnectGraph() {
-    for (const { from, to } of [...this.#appliedEdges.values()].reverse()) {
-      try {
-        from.disconnect(to);
-      } catch {
-        // A source hook may already have disconnected its native node.
-      }
+    for (const [key, edge] of [...this.#appliedEdges].reverse()) {
+      this.#disconnectEdge(key, edge);
     }
-    this.#appliedEdges.clear();
+  }
+
+  #disconnectEdge(key, { from, to }) {
+    try {
+      from.disconnect(to);
+    } catch {
+      // A source hook may already have disconnected its native node.
+    }
+    this.#appliedEdges.delete(key);
   }
 
   #throwIfTerminalRequested() {
@@ -253,19 +372,24 @@ export class AudioGraphRuntime {
   }
 
   #releaseNodes() {
-    for (const { element, role } of [...this.#plan.nodes].reverse()) {
-      const node = this.#nodes.get(element);
-      if (node && role !== "output") {
-        try {
-          node.disconnect();
-        } catch {
-          // Disconnection is best-effort during terminal cleanup and rollback.
-        }
-      }
-      if (node) element._detachAudioNode(node);
-      element._clearAudioOwner(this.#owner);
+    for (const planNode of [...this.#plan.nodes].reverse()) {
+      this.#releaseNode(planNode);
     }
     this.#nodes.clear();
     this.#initialized = false;
+  }
+
+  #releaseNode({ element, role }) {
+    const node = this.#nodes.get(element);
+    if (node && role !== "output") {
+      try {
+        node.disconnect();
+      } catch {
+        // Disconnection is best-effort during terminal cleanup and rollback.
+      }
+    }
+    if (node) element._detachAudioNode(node);
+    this.#nodes.delete(element);
+    element._clearAudioOwner(this.#owner);
   }
 }

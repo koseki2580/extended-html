@@ -454,4 +454,182 @@ describe("AudioGraphRuntime", () => {
     assertEqual(firstClosed, true, "late first resource is terminally released");
     assertEqual(runtime.state, "closed", "close completes terminally");
   });
+
+  it("adds replacement edges before removing obsolete edges", async () => {
+    const fixture = createFixture();
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+    const candidate = {
+      ...fixture.plan,
+      edges: [
+        { from: fixture.first, to: fixture.output },
+        { from: fixture.filter, to: fixture.output },
+        { from: fixture.second, to: fixture.filter },
+      ],
+    };
+
+    await runtime.reconcile(candidate);
+
+    assertEqual(
+      fixture.events.join(","),
+      "connect:first->output,disconnect:first->filter",
+      "replacement connection order",
+    );
+  });
+
+  it("starts added sources in candidate DOM order and terminally removes old sources", async () => {
+    const fixture = createFixture();
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+
+    const third = document.createElement("test-runtime-source");
+    third.nativeNode = createNativeNode("third", fixture.events);
+    third.activate = async () => fixture.events.push("activate:third");
+    third.connected = async () => fixture.events.push("connected:third");
+    fixture.first.close = async () => fixture.events.push("close:first");
+    const candidate = {
+      nodes: [
+        { element: fixture.second, role: "source", rootSource: fixture.second },
+        { element: fixture.filter, role: "processor", rootSource: fixture.second },
+        { element: fixture.output, role: "output", rootSource: fixture.second },
+        { element: third, role: "source", rootSource: third },
+      ],
+      edges: [
+        { from: fixture.second, to: fixture.filter },
+        { from: fixture.filter, to: fixture.output },
+        { from: third, to: fixture.output },
+      ],
+      sources: [
+        { element: fixture.second, role: "source", rootSource: fixture.second },
+        { element: third, role: "source", rootSource: third },
+      ],
+    };
+
+    await runtime.reconcile(candidate);
+
+    assert(
+      fixture.events.indexOf("connect:third->output") <
+        fixture.events.indexOf("activate:third"),
+      "new source is connected before activation",
+    );
+    assert(
+      fixture.events.indexOf("activate:third") <
+        fixture.events.indexOf("close:first"),
+      "candidate starts before removed source cleanup",
+    );
+    assertEqual(
+      fixture.events.filter((event) => event === "activate:second").length,
+      0,
+      "unchanged source is not restarted",
+    );
+    assertEqual(third._getAudioOwner(), fixture.owner, "new source is committed");
+    assertEqual(fixture.first._getAudioOwner(), null, "removed source is released");
+  });
+
+  it("rolls back only candidate additions when a native connection fails", async () => {
+    const fixture = createFixture();
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+    const added = document.createElement("test-runtime-node");
+    added.nativeNode = createNativeNode("added", fixture.events);
+    added.nativeNode.connect = () => {
+      fixture.events.push("connect:added->output");
+      throw new Error("connect failed");
+    };
+    const candidate = {
+      nodes: [
+        ...fixture.plan.nodes,
+        { element: added, role: "processor", rootSource: fixture.first },
+      ],
+      edges: [
+        ...fixture.plan.edges,
+        { from: fixture.first, to: added },
+        { from: added, to: fixture.output },
+      ],
+      sources: fixture.plan.sources,
+    };
+
+    let rejected;
+    try {
+      await runtime.reconcile(candidate);
+    } catch (error) {
+      rejected = error;
+    }
+
+    assertEqual(rejected.message, "connect failed", "native failure is preserved");
+    assert(
+      fixture.events.includes("disconnect:first->added"),
+      "successfully added edge is rolled back",
+    );
+    assert(
+      !fixture.events.includes("disconnect:first->filter"),
+      "old edge remains connected",
+    );
+    assertEqual(added._getAudioOwner(), null, "candidate node owner is released");
+    assertEqual(fixture.first._getAudioOwner(), fixture.owner, "old owner remains");
+  });
+
+  it("cleans a failed new source while preserving previously running sources", async () => {
+    const fixture = createFixture();
+    let oldCloses = 0;
+    fixture.first.close = async () => {
+      oldCloses += 1;
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+    const added = document.createElement("test-runtime-source");
+    added.nativeNode = createNativeNode("added", fixture.events);
+    added.activate = async () => {
+      throw new Error("new source failed");
+    };
+    added.close = async () => fixture.events.push("close:added");
+    const candidate = {
+      nodes: [
+        ...fixture.plan.nodes,
+        { element: added, role: "source", rootSource: added },
+      ],
+      edges: [...fixture.plan.edges, { from: added, to: fixture.output }],
+      sources: [
+        ...fixture.plan.sources,
+        { element: added, role: "source", rootSource: added },
+      ],
+    };
+
+    let rejected;
+    try {
+      await runtime.reconcile(candidate);
+    } catch (error) {
+      rejected = error;
+    }
+
+    assertEqual(rejected.message, "new source failed", "activation failure");
+    assert(fixture.events.includes("close:added"), "failed source closes");
+    assert(
+      fixture.events.includes("disconnect:added->output"),
+      "failed source edge is removed",
+    );
+    assertEqual(oldCloses, 0, "old sources remain running");
+    assertEqual(runtime.state, "running", "runtime stays running");
+    assertEqual(added._getAudioOwner(), null, "failed source is released");
+  });
 });

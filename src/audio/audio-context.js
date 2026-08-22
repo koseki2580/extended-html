@@ -8,6 +8,16 @@ const closedError = () =>
 const unavailableError = () =>
   new DOMException("Web Audio API is not available", "NotSupportedError");
 
+const GRAPH_ATTRIBUTES = [
+  "id",
+  "to",
+  "type",
+  "frequency",
+  "detune",
+  "q",
+  "gain",
+];
+
 export class AudioContextElement extends AudioEventTargetElement {
   static audioEventTypes = ["statechange", "error"];
   static observedAttributes = ["onstatechange", "onerror"];
@@ -19,12 +29,25 @@ export class AudioContextElement extends AudioEventTargetElement {
   #pendingKind = null;
   #pendingPromise = null;
   #closePromise = null;
+  #observer;
+  #reconciliationQueued = false;
   #handleNativeStateChange = (event) => {
     dispatchAudioEvent(this, "statechange", event, this);
     if (this.#closed && this.#nativeContext?.state === "closed") {
       this.#removeNativeStateChangeListener();
     }
   };
+
+  constructor() {
+    super();
+    this.#observer = new MutationObserver(() => this.#queueReconciliation());
+    this.#observer.observe(this, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: GRAPH_ATTRIBUTES,
+    });
+  }
 
   get state() {
     if (this.#nativeContext !== null) return this.#nativeContext.state;
@@ -60,6 +83,9 @@ export class AudioContextElement extends AudioEventTargetElement {
   close() {
     if (this.#closePromise !== null) return this.#closePromise;
     this.#closed = true;
+    // Stop observing before any asynchronous cleanup so later DOM writes are ignored.
+    this.#observer.disconnect();
+    this.#reconciliationQueued = false;
     this.#runtime?._requestTerminalClose();
     this.#closePromise = this.#enqueue(() => this.#performClose());
     return this.#closePromise;
@@ -118,6 +144,34 @@ export class AudioContextElement extends AudioEventTargetElement {
     } catch (error) {
       dispatchAudioEvent(this, "error", error, this);
       this.#removeNativeStateChangeListener();
+      throw error;
+    }
+  }
+
+  #queueReconciliation() {
+    if (this.#closed || this.#runtime === null || this.#reconciliationQueued) {
+      return;
+    }
+    this.#reconciliationQueued = true;
+    queueMicrotask(() => {
+      if (this.#closed || !this.#reconciliationQueued) return;
+      this.#reconciliationQueued = false;
+      this.#enqueue(() => this.#performReconciliation()).catch(() => {
+        // Reconciliation errors are reported through the context error event.
+      });
+    });
+  }
+
+  async #performReconciliation() {
+    if (this.#closed || this.#runtime === null) return;
+    try {
+      const candidatePlan = buildAudioGraphPlan(this);
+      for (const { element } of candidatePlan.nodes) {
+        element._validateAudioConfiguration();
+      }
+      await this.#runtime.reconcile(candidatePlan);
+    } catch (error) {
+      if (!this.#closed) dispatchAudioEvent(this, "error", error, this);
       throw error;
     }
   }
