@@ -667,23 +667,64 @@ describe("AudioContextElement", () => {
     assertEqual(errors.length, 2, "recovery adds no error");
   });
 
+  it("recovers when a detached duplicate clears its id in the removal batch", async () => {
+    const { context } = createElement();
+    const filter = context.querySelector("audio-biquad-filter");
+    filter.id = "same";
+    document.body.append(context);
+    await context.resume();
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+
+    const duplicate = document.createElement("div");
+    duplicate.id = "same";
+    context.append(duplicate);
+    await flushReconciliation();
+    filter.setAttribute("frequency", "900");
+    await flushReconciliation();
+    assertEqual(errors.length, 2, "invalid candidates are reported");
+    assertEqual(filter.frequency.value, 350, "configuration remains staged");
+
+    duplicate.removeAttribute("id");
+    duplicate.remove();
+    await flushReconciliation();
+
+    assertEqual(filter.frequency.value, 900, "historical id removal recovers graph");
+    assertEqual(errors.length, 2, "same-batch recovery adds no error");
+  });
+
   it("keeps non-audio ids inside a nested context isolated", async () => {
     const { context: outer } = createElement();
-    outer.querySelector("audio-biquad-filter").id = "same";
+    const outerFilter = outer.querySelector("audio-biquad-filter");
+    outerFilter.id = "same";
     document.body.append(outer);
     await outer.resume();
+    outerFilter.frequency.value = 777;
     const errors = [];
     outer.onerror = (event) => errors.push(event.detail.data);
 
     const { context: inner } = createElement();
-    const nestedMetadata = document.createElement("div");
-    nestedMetadata.id = "same";
-    inner.append(nestedMetadata);
+    const innerFilter = inner.querySelector("audio-biquad-filter");
+    innerFilter.id = "nested-same";
     outer.append(inner);
+    await inner.resume();
+    const innerErrors = [];
+    inner.onerror = (event) => innerErrors.push(event.detail.data);
+    const nestedMetadata = document.createElement("div");
+    nestedMetadata.id = "nested-same";
+    inner.append(nestedMetadata);
+    await flushReconciliation();
+    innerFilter.setAttribute("frequency", "900");
+    await flushReconciliation();
+
+    nestedMetadata.removeAttribute("id");
+    nestedMetadata.remove();
     await flushReconciliation();
 
     assertEqual(errors.length, 0, "nested id does not affect the outer scope");
-    await inner.resume();
+    assertEqual(outerFilter.frequency.value, 777, "outer AudioParam is untouched");
+    assertEqual(innerErrors.length, 2, "inner duplicate candidates are reported");
+    assertEqual(innerFilter.frequency.value, 900, "inner graph recovers independently");
     assertEqual(inner.state, "running", "inner id remains independently valid");
   });
 

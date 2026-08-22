@@ -58,6 +58,7 @@ export class AudioContextElement extends AudioEventTargetElement {
       subtree: true,
       childList: true,
       attributes: true,
+      attributeOldValue: true,
       attributeFilter: GRAPH_ATTRIBUTES,
     });
   }
@@ -209,8 +210,9 @@ export class AudioContextElement extends AudioEventTargetElement {
   }
 
   #recordMutations(records) {
+    const historicalIdRecords = this.#historicalIdRemovalRecords(records);
     const relevantRecords = records.filter((record) =>
-      this.#isRelevantMutation(record),
+      this.#isRelevantMutation(record, historicalIdRecords),
     );
     if (relevantRecords.length === 0) return false;
     this.#mutationGeneration += 1;
@@ -229,7 +231,37 @@ export class AudioContextElement extends AudioEventTargetElement {
     return true;
   }
 
-  #isRelevantMutation(record) {
+  #historicalIdRemovalRecords(records) {
+    const relevant = new Set();
+    const removals = records.filter(
+      (record) =>
+        record.type === "childList" &&
+        record.removedNodes.length > 0 &&
+        (record.target === this ||
+          record.target.closest?.("audio-context") === this),
+    );
+    for (const attributeRecord of records) {
+      if (
+        attributeRecord.type !== "attributes" ||
+        attributeRecord.attributeName !== "id" ||
+        !attributeRecord.oldValue
+      ) {
+        continue;
+      }
+      for (const removal of removals) {
+        const containsTarget = [...removal.removedNodes].some((node) =>
+          this.#isolatedSubtreeContains(node, attributeRecord.target),
+        );
+        if (!containsTarget) continue;
+        relevant.add(attributeRecord);
+        relevant.add(removal);
+      }
+    }
+    return relevant;
+  }
+
+  #isRelevantMutation(record, historicalIdRecords) {
+    if (historicalIdRecords.has(record)) return true;
     const targetIsOwned =
       record.target === this ||
       record.target.closest?.("audio-context") === this;
@@ -238,6 +270,14 @@ export class AudioContextElement extends AudioEventTargetElement {
 
     return [...record.addedNodes, ...record.removedNodes].some((node) =>
       this.#subtreeAffectsAudioGraph(node),
+    );
+  }
+
+  #isolatedSubtreeContains(node, target) {
+    if (node.nodeType !== 1 || node.localName === "audio-context") return false;
+    if (node === target) return true;
+    return [...node.children].some((child) =>
+      this.#isolatedSubtreeContains(child, target),
     );
   }
 
