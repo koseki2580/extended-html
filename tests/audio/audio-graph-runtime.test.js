@@ -713,4 +713,62 @@ describe("AudioGraphRuntime", () => {
     assertEqual(runtime.state, "running", "runtime stays running");
     assertEqual(added._getAudioOwner(), null, "failed source is released");
   });
+
+  it("cancels a stale added source before its connected hook and rolls back only additions", async () => {
+    const fixture = createFixture();
+    let oldCloses = 0;
+    fixture.first.close = async () => {
+      oldCloses += 1;
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+
+    const added = document.createElement("test-runtime-source");
+    added.nativeNode = createNativeNode("added", fixture.events);
+    let resolveActivation;
+    let connected = 0;
+    let closed = 0;
+    added.activate = () =>
+      new Promise((resolve) => {
+        resolveActivation = resolve;
+      });
+    added.connected = async () => {
+      connected += 1;
+    };
+    added.close = async () => {
+      closed += 1;
+    };
+    const candidate = {
+      nodes: [
+        ...fixture.plan.nodes,
+        { element: added, role: "source", rootSource: added },
+      ],
+      edges: [...fixture.plan.edges, { from: added, to: fixture.output }],
+      sources: [
+        ...fixture.plan.sources,
+        { element: added, role: "source", rootSource: added },
+      ],
+    };
+    let current = true;
+    const reconciling = runtime.reconcile(candidate, {
+      isCurrent: () => current,
+    });
+    while (!resolveActivation) await Promise.resolve();
+
+    current = false;
+    resolveActivation();
+    const committed = await reconciling;
+
+    assertEqual(committed, false, "stale candidate is not committed");
+    assertEqual(connected, 0, "stale source never reaches connected hook");
+    assertEqual(closed, 1, "stale source resource is cleaned");
+    assertEqual(oldCloses, 0, "old sources remain running");
+    assertEqual(added._getAudioOwner(), null, "stale source owner is released");
+    assertEqual(runtime.state, "running", "old runtime stays running");
+  });
 });

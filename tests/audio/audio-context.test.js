@@ -627,6 +627,50 @@ describe("AudioContextElement", () => {
     );
   });
 
+  it("cancels an added file source removed while playback activation is pending", async () => {
+    const { context, file: first } = createElement();
+    document.body.append(context);
+    let firstPauses = 0;
+    first._getMediaElement().pause = () => {
+      firstPauses += 1;
+    };
+    await context.resume();
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+
+    const added = document.createElement("audio-input-file");
+    added.append(document.createElement("audio-output"));
+    let resolvePlayback;
+    let connected = 0;
+    let addedPauses = 0;
+    added._getMediaElement().play = () =>
+      new Promise((resolve) => {
+        resolvePlayback = resolve;
+      });
+    added._getMediaElement().pause = () => {
+      addedPauses += 1;
+    };
+    added._connected = async () => {
+      connected += 1;
+    };
+    context.append(added);
+    while (!resolvePlayback) await Promise.resolve();
+
+    added.remove();
+    await Promise.resolve();
+    await Promise.resolve();
+    resolvePlayback();
+    await flushReconciliation();
+    await flushReconciliation();
+
+    assertEqual(connected, 0, "removed source never reaches connected hook");
+    assertEqual(addedPauses, 1, "removed pending source is cleaned");
+    assertEqual(added._getAudioOwner(), null, "removed source owner is released");
+    assertEqual(firstPauses, 0, "old source remains running");
+    assertEqual(errors.length, 0, "stale candidate emits no user error");
+    assertEqual(context.state, "running", "context remains running");
+  });
+
   it("disconnects its observer synchronously when terminal close starts", async () => {
     const { context } = createElement();
     document.body.append(context);

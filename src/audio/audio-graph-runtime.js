@@ -4,6 +4,8 @@ const closedError = () =>
 const closingError = () =>
   new DOMException("Audio context is closing", "InvalidStateError");
 
+const STALE_CANDIDATE = Symbol("stale audio graph candidate");
+
 export class AudioGraphRuntime {
   #owner;
   #context;
@@ -78,9 +80,10 @@ export class AudioGraphRuntime {
     return this.#closePromise;
   }
 
-  async reconcile(candidatePlan) {
+  async reconcile(candidatePlan, { isCurrent = () => true } = {}) {
     if (this.#state === "closed") throw closedError();
     if (this.#terminalRequested) throw closingError();
+    if (!isCurrent()) return false;
 
     const previousPlan = this.#plan;
     const previousElements = new Set(
@@ -100,6 +103,7 @@ export class AudioGraphRuntime {
     const configuredNodes = [];
 
     try {
+      this.#throwIfCandidateStale(isCurrent);
       for (const { element } of candidatePlan.nodes) {
         if (!previousElements.has(element) || !this.#nodes.has(element)) continue;
         const configuration = element._captureAudioConfiguration();
@@ -126,15 +130,20 @@ export class AudioGraphRuntime {
       if (this.#state === "running") {
         for (const { element } of addedSources) {
           this.#throwIfTerminalRequested();
+          this.#throwIfCandidateStale(isCurrent);
           activatedSources.push(element);
           await element._activate(this.#context);
           this.#throwIfTerminalRequested();
+          this.#throwIfCandidateStale(isCurrent);
           this.#captureActivatedNode(element);
           this.#applyAvailableEdges(candidatePlan, addedEdgeKeys);
           this.#throwIfTerminalRequested();
+          this.#throwIfCandidateStale(isCurrent);
           await element._connected();
+          this.#throwIfCandidateStale(isCurrent);
         }
       }
+      this.#throwIfCandidateStale(isCurrent);
     } catch (error) {
       await this.#rollbackCandidate(
         activatedSources,
@@ -142,6 +151,7 @@ export class AudioGraphRuntime {
         addedNodes,
         configuredNodes,
       );
+      if (error === STALE_CANDIDATE) return false;
       throw error;
     }
 
@@ -169,6 +179,7 @@ export class AudioGraphRuntime {
       this.#releaseNode(node);
     }
     if (firstCleanupError !== null) throw firstCleanupError;
+    return true;
   }
 
   _requestTerminalClose() {
@@ -417,6 +428,10 @@ export class AudioGraphRuntime {
 
   #throwIfTerminalRequested() {
     if (this.#terminalRequested) throw closingError();
+  }
+
+  #throwIfCandidateStale(isCurrent) {
+    if (!isCurrent()) throw STALE_CANDIDATE;
   }
 
   #releaseNodes() {

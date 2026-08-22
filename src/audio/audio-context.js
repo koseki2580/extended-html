@@ -31,6 +31,7 @@ export class AudioContextElement extends AudioEventTargetElement {
   #closePromise = null;
   #observer;
   #reconciliationQueued = false;
+  #mutationGeneration = 0;
   #handleNativeStateChange = (event) => {
     dispatchAudioEvent(this, "statechange", event, this);
     if (this.#closed && this.#nativeContext?.state === "closed") {
@@ -40,7 +41,10 @@ export class AudioContextElement extends AudioEventTargetElement {
 
   constructor() {
     super();
-    this.#observer = new MutationObserver(() => this.#queueReconciliation());
+    this.#observer = new MutationObserver(() => {
+      this.#mutationGeneration += 1;
+      this.#queueReconciliation();
+    });
     this.#observer.observe(this, {
       subtree: true,
       childList: true,
@@ -165,11 +169,15 @@ export class AudioContextElement extends AudioEventTargetElement {
   async #performReconciliation() {
     if (this.#closed || this.#runtime === null) return;
     try {
+      const generation = this.#mutationGeneration;
       const candidatePlan = buildAudioGraphPlan(this);
       for (const { element } of candidatePlan.nodes) {
         element._validateAudioConfiguration();
       }
-      await this.#runtime.reconcile(candidatePlan);
+      await this.#runtime.reconcile(candidatePlan, {
+        isCurrent: () =>
+          !this.#closed && generation === this.#mutationGeneration,
+      });
     } catch (error) {
       if (!this.#closed) dispatchAudioEvent(this, "error", error, this);
       throw error;
