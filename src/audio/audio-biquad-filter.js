@@ -154,7 +154,10 @@ export class AudioBiquadFilterElement extends AudioNodeElement {
     const parameters = [];
     for (const name of PARAMETER_ATTRIBUTES.keys()) {
       const value = this.getAttribute(name);
-      if (value !== null) parameters.push([name, parseFiniteNumber(name, value)]);
+      parameters.push([
+        name,
+        value === null ? DEFAULT_VALUES.get(name) : parseFiniteNumber(name, value),
+      ]);
     }
     return { type, parameters };
   }

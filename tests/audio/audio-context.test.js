@@ -490,6 +490,35 @@ describe("AudioContextElement", () => {
     );
   });
 
+  it("restores standard Biquad defaults when owned attributes are removed", async () => {
+    const { context } = createElement();
+    const filter = context.querySelector("audio-biquad-filter");
+    filter.setAttribute("type", "highpass");
+    filter.setAttribute("frequency", "900");
+    filter.setAttribute("detune", "8");
+    filter.setAttribute("q", "3");
+    filter.setAttribute("gain", "2");
+    document.body.append(context);
+    await context.resume();
+    const nodeCreations = FakeAudioContext.nodeCreations;
+
+    for (const name of ["type", "frequency", "detune", "q", "gain"]) {
+      filter.removeAttribute(name);
+    }
+    await flushReconciliation();
+
+    assertEqual(filter.type, "lowpass", "default type is restored");
+    assertEqual(filter.frequency.value, 350, "default frequency is restored");
+    assertEqual(filter.detune.value, 0, "default detune is restored");
+    assertEqual(filter.Q.value, 1, "default Q is restored");
+    assertEqual(filter.gain.value, 0, "default gain is restored");
+    assertEqual(
+      FakeAudioContext.nodeCreations,
+      nodeCreations,
+      "default restoration reuses the native filter",
+    );
+  });
+
   it("reconciles added and removed running sources without restarting unchanged sources", async () => {
     const { context, file: first } = createElement();
     document.body.append(context);
