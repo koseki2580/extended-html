@@ -234,6 +234,37 @@ test("Audio example starts and controls every source through its context", async
   expect(errors).toEqual([]);
 });
 
+test("Audio example exposes a failed start and keeps recovery controls available", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/`);
+  await page.evaluate(() => {
+    document.querySelector("audio-context").resume = async () => {
+      throw new DOMException(
+        "Microphone permission denied by test",
+        "NotAllowedError",
+      );
+    };
+  });
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+
+  await expect(page.getByTestId("audio-state")).toHaveText("Error");
+  await expect(page.getByRole("alert")).toContainText(
+    "NotAllowedError: Microphone permission denied by test",
+  );
+  await expect(page.getByRole("group", { name: "Audio lifecycle" })).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(page.getByRole("button", { name: "Start audio" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Suspend audio" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Resume audio" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Close audio" })).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
 for (const width of [375, 768, 1024, 1440]) {
   test(`Audio example remains usable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
