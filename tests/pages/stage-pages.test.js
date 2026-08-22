@@ -37,6 +37,10 @@ test("stages only the static site and runtime source", async () => {
     const expectedFiles = [
       "index.html",
       "examples/index.html",
+      "examples/audio-context/index.html",
+      "examples/assets/audio-context-example.js",
+      "examples/assets/site.css",
+      "examples/assets/site.js",
       "examples/web-socket/index.html",
       "examples/web-socket/background.html",
       "guide/en/index.html",
@@ -71,6 +75,12 @@ test("stages only the static site and runtime source", async () => {
       "utf8",
     );
     assert.match(example, /\.\.\/\.\.\/src\/index\.js/);
+
+    const audioExample = await readFile(
+      join(destination, "examples/audio-context/index.html"),
+      "utf8",
+    );
+    assert.match(audioExample, /\.\.\/\.\.\/src\/audio\/index\.js/);
   } finally {
     await rm(destination, { recursive: true, force: true });
   }

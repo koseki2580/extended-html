@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Build and control a declarative Web Audio graph with extended-html."
+    />
+    <title>Audio graph example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="audio-context">
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main">
+        <header class="hero">
+          <p class="eyebrow">Web Audio · Declarative graph</p>
+          <h1>Build one<br />audio graph.</h1>
+          <p class="hero-copy">
+            Nest sources, processing, and output in HTML. One context action
+            starts the microphone and generated tone in source order.
+          </p>
+        </header>
+
+        <div class="example-layout">
+          <section class="panel" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Live controls</h2>
+            <p class="field-help">
+              Start requests microphone permission and begins every declared
+              source. Close permanently releases the graph.
+            </p>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">
+                state:
+                <strong data-testid="audio-state">Suspended</strong>
+              </span>
+            </div>
+            <p id="audio-error" class="field-help" role="alert" aria-live="assertive"></p>
+            <div
+              class="socket-actions"
+              role="group"
+              aria-label="Audio lifecycle"
+              aria-busy="false"
+              data-audio-actions
+            >
+              <button class="primary" id="start" type="button">Start audio</button>
+              <button id="suspend" type="button" disabled>Suspend audio</button>
+              <button id="resume" type="button" disabled>Resume audio</button>
+              <button id="close" type="button">Close audio</button>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="events-heading">
+            <h2 id="events-heading">Wrapped event log</h2>
+            <p class="field-help">
+              Each entry shows data and metadata from <code>event.detail</code>.
+            </p>
+            <ol class="event-log" data-testid="event-log" aria-live="polite"></ol>
+          </section>
+
+          <section class="panel" aria-labelledby="markup-heading">
+            <h2 id="markup-heading">Graph markup</h2>
+            <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic id="mic"&gt;
+    &lt;audio-biquad-filter id="mix" frequency="1200"&gt;
+      &lt;audio-output&gt;&lt;/audio-output&gt;
+    &lt;/audio-biquad-filter&gt;
+  &lt;/audio-input-mic&gt;
+  &lt;audio-input-file id="music" to="mix" loop&gt;
+  &lt;/audio-input-file&gt;
+&lt;/audio-context&gt;</code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <audio-context id="audio" hidden>
+      <audio-input-mic id="mic">
+        <audio-biquad-filter id="mix" frequency="1200">
+          <audio-output></audio-output>
+        </audio-biquad-filter>
+      </audio-input-mic>
+      <audio-input-file id="music" to="mix" loop></audio-input-file>
+    </audio-context>
+    <script type="module" src="../../src/audio/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/audio-context-example.js"></script>
+  </body>
+</html>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="extended-htmlのweb-socketカスタムエレメントを使うための日本語ガイドです。"
+      content="extended-htmlのWebSocketとAudioカスタムエレメントを使うための日本語ガイドです。"
     />
     <title>日本語ユーザーガイド · extended-html</title>
     <link rel="alternate" hreflang="en" href="../en/" />
@@ -30,6 +30,7 @@
             <li><a href="#reconnect">再接続</a></li>
             <li><a href="#api">API一覧</a></li>
             <li><a href="#examples">サンプル</a></li>
+            <li><a href="#audio-context">Audio graph</a></li>
           </ul>
           <div class="guide-footer">
             <a class="language-link" href="../en/" lang="en">Read in English</a>
@@ -219,6 +220,47 @@ socket.close();</code></pre>
             event logを確認できます。
           </p>
           <a class="example-link" href="../../examples/">動作するサンプル</a>
+        </section>
+
+        <section class="guide-section" id="audio-context">
+          <p class="eyebrow">10 · Audio graph</p>
+          <h2>ネストしたHTMLでWeb Audioを表現する</h2>
+          <p>
+            <code>&lt;audio-context&gt;</code>が宣言的なgraph全体を所有します。
+            直下のsource siblingはDOM順に開始し、深い子要素は直列接続、processor siblingはfan-outになります。
+            <code>to</code>は別のsource tree内にネスト済みのprocessorまたはoutputへedgeを追加する場合だけ使います。
+          </p>
+          <pre class="code-block"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic id="mic"&gt;
+    &lt;audio-biquad-filter id="mix" frequency="1200"&gt;
+      &lt;audio-output&gt;&lt;/audio-output&gt;
+    &lt;/audio-biquad-filter&gt;
+  &lt;/audio-input-mic&gt;
+  &lt;audio-input-file id="music" src="./tone.wav" to="mix" loop&gt;
+  &lt;/audio-input-file&gt;
+&lt;/audio-context&gt;</code></pre>
+          <p>
+            Audioには<code>auto</code>も<code>autoplay</code>もありません。
+            ユーザー操作から所有者であるcontextの<code>resume()</code>を呼ぶと、graphを構築してすべてのsourceを開始します。
+            <code>suspend()</code>は各sourceを一時停止または無効化し、次の<code>resume()</code>は順番に再開します。
+            <code>close()</code>はgraphを完全に解放するため、その後は再開できません。micやfileを個別には開始しません。
+          </p>
+          <pre class="code-block"><code>const audio = document.querySelector("#audio");
+
+start.addEventListener("click", () =&gt; audio.resume());
+suspend.addEventListener("click", () =&gt; audio.suspend());
+closeButton.addEventListener("click", () =&gt; audio.close());</code></pre>
+          <p>
+            context、microphone、fileのeventは同じenvelopeを使います。
+            payloadは<code>event.detail.data</code>、graph上の識別情報は
+            <code>event.detail.metadata</code>から読み取ります。
+          </p>
+          <p>
+            gain、analyser、oscillator、delayとfeedback、channel splitter/merger、compressor、convolver、
+            panner、buffer source、media-stream destination、AudioParam automation markup、
+            <code>AudioWorklet</code>、<code>OfflineAudioContext</code>、microphone constraintsは今後の対象です。
+          </p>
+          <a class="example-link" href="../../examples/audio-context/">Audioサンプル</a>
         </section>
       </main>
     </div>

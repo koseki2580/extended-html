@@ -10,6 +10,7 @@ const links = [
     label: "WebSocket: Worker",
     path: "web-socket/background.html",
   },
+  { id: "audio-context", label: "Audio graph", path: "audio-context/" },
   {
     id: "guide-en",
     label: "English User Guide",
