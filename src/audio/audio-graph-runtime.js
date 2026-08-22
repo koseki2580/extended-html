@@ -10,6 +10,7 @@ export class AudioGraphRuntime {
   #plan;
   #nodes = new Map();
   #appliedEdges = new Map();
+  #nativeEdgeReferences = new WeakMap();
   #elementIds = new WeakMap();
   #nextElementId = 0;
   #initialized = false;
@@ -305,7 +306,7 @@ export class AudioGraphRuntime {
       const key = this.#edgeKey(edge);
       if (this.#appliedEdges.has(key)) continue;
       try {
-        from.connect(to);
+        this.#retainNativeEdge(from, to);
       } catch (error) {
         try {
           from.disconnect(to);
@@ -316,6 +317,34 @@ export class AudioGraphRuntime {
       }
       this.#appliedEdges.set(key, { from, to });
       addedEdgeKeys?.push(key);
+    }
+  }
+
+  #retainNativeEdge(from, to) {
+    let targets = this.#nativeEdgeReferences.get(from);
+    if (!targets) {
+      targets = new Map();
+      this.#nativeEdgeReferences.set(from, targets);
+    }
+    const references = targets.get(to) ?? 0;
+    if (references === 0) from.connect(to);
+    targets.set(to, references + 1);
+  }
+
+  #releaseNativeEdge(from, to) {
+    const targets = this.#nativeEdgeReferences.get(from);
+    const references = targets?.get(to) ?? 0;
+    if (references > 1) {
+      targets.set(to, references - 1);
+      return;
+    }
+    if (references === 1) {
+      try {
+        from.disconnect(to);
+      } catch {
+        // A source hook may already have disconnected its native node.
+      }
+      targets.delete(to);
     }
   }
 
@@ -382,11 +411,7 @@ export class AudioGraphRuntime {
   }
 
   #disconnectEdge(key, { from, to }) {
-    try {
-      from.disconnect(to);
-    } catch {
-      // A source hook may already have disconnected its native node.
-    }
+    this.#releaseNativeEdge(from, to);
     this.#appliedEdges.delete(key);
   }
 

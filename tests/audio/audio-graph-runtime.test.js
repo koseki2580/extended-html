@@ -498,6 +498,64 @@ describe("AudioGraphRuntime", () => {
     );
   });
 
+  it("keeps a shared native destination connected until its last logical edge is removed", async () => {
+    const events = [];
+    const owner = document.createElement("div");
+    const source = document.createElement("test-runtime-source");
+    const firstOutput = document.createElement("test-runtime-node");
+    const secondOutput = document.createElement("test-runtime-node");
+    source.nativeNode = createNativeNode("source", events);
+    const destination = createNativeNode("destination", events);
+    firstOutput.nativeNode = destination;
+    secondOutput.nativeNode = destination;
+    const sourcePlanNode = { element: source, role: "source", rootSource: source };
+    const firstOutputPlanNode = {
+      element: firstOutput,
+      role: "output",
+      rootSource: source,
+    };
+    const secondOutputPlanNode = {
+      element: secondOutput,
+      role: "output",
+      rootSource: source,
+    };
+    const plan = {
+      nodes: [sourcePlanNode, firstOutputPlanNode, secondOutputPlanNode],
+      edges: [
+        { from: source, to: firstOutput },
+        { from: source, to: secondOutput },
+      ],
+      sources: [sourcePlanNode],
+    };
+    const runtime = new AudioGraphRuntime(owner, createContext(events), plan);
+
+    await runtime.resume();
+    assertEqual(
+      events.filter((event) => event === "connect:source->destination").length,
+      1,
+      "shared native edge connects once",
+    );
+    events.length = 0;
+
+    await runtime.reconcile({
+      nodes: [sourcePlanNode, secondOutputPlanNode],
+      edges: [{ from: source, to: secondOutput }],
+      sources: [sourcePlanNode],
+    });
+    assertEqual(events.length, 0, "retained logical edge keeps native edge connected");
+
+    await runtime.reconcile({
+      nodes: [sourcePlanNode],
+      edges: [],
+      sources: [sourcePlanNode],
+    });
+    assertEqual(
+      events.filter((event) => event === "disconnect:source->destination").length,
+      1,
+      "last logical edge disconnects native edge",
+    );
+  });
+
   it("starts added sources in candidate DOM order and terminally removes old sources", async () => {
     const fixture = createFixture();
     const runtime = new AudioGraphRuntime(
