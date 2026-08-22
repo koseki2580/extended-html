@@ -13,6 +13,7 @@ its implementation contract and repository operations for maintainers.
 ## Custom elements
 
 - [`<web-socket>` API](web-socket.md)
+- [Declarative Audio graph API](audio-context.md)
 
 ## Repository operations
 

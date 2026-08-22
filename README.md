@@ -1,16 +1,16 @@
-# extended-html
+# Extended HTML
 
 Use browser JavaScript APIs as build-free HTML custom elements.
 
-## Use `<web-socket>`
-
-Import the aggregate entry point to register the available elements:
+Register every available custom element from the package root:
 
 ```html
 <script type="module">
-  import "./src/index.js";
+  import "extended-html";
 </script>
 ```
+
+## Use `<web-socket>`
 
 Add a WebSocket connection to HTML and handle its wrapped events:
 
@@ -21,11 +21,13 @@ Add a WebSocket connection to HTML and handle its wrapped events:
   onmessage="OnMessage(event)"
 ></web-socket>
 
-<script>
+<script type="module">
   function OnMessage(event) {
     console.log(event.detail.data);
     console.log(event.detail.metadata.transport);
   }
+
+  globalThis.OnMessage = OnMessage;
 </script>
 ```
 
@@ -48,6 +50,40 @@ without changing the methods or events:
   auto
   background
 ></web-socket>
+```
+
+## Use `<audio-context>`
+
+Register only the five Audio elements when the aggregate entry is not needed:
+
+```html
+<script type="module">
+  import "extended-html/audio-context";
+</script>
+```
+
+Describe the audio graph through nesting, then start every source with one
+user-initiated `resume()` call:
+
+```html
+<audio-context id="audio">
+  <audio-input-file src="./music.mp3">
+    <audio-biquad-filter type="lowpass" frequency="1200">
+      <audio-output></audio-output>
+    </audio-biquad-filter>
+  </audio-input-file>
+</audio-context>
+
+<button id="start" type="button">Start audio</button>
+
+<script type="module">
+  const audio = document.querySelector("#audio");
+  const start = document.querySelector("#start");
+
+  start.addEventListener("click", async () => {
+    await audio.resume();
+  });
+</script>
 ```
 
 ## Guides and examples
