@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
-    "./web-socket": "./src/web-socket/web-socket.js"
+    "./web-socket": "./src/web-socket/web-socket.js",
+    "./audio-context": "./src/audio/index.js"
   },
   "files": [
     "src"

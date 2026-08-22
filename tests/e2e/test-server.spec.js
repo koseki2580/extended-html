@@ -7,7 +7,34 @@ test("serves repository modules and exposes observable WebSocket traffic", async
   try {
     const response = await fetch(`${server.httpUrl}/src/index.js`);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('import "./web-socket/web-socket.js"');
+    const aggregateSource = await response.text();
+    expect(aggregateSource).toContain('import "./web-socket/web-socket.js"');
+    expect(aggregateSource).toContain('import "./audio/index.js"');
+
+    const audioEntry = await fetch(`${server.httpUrl}/src/audio/index.js`);
+    expect(audioEntry.status).toBe(200);
+    const audioEntrySource = await audioEntry.text();
+    expect(audioEntrySource).toContain(
+      'import { AudioContextElement } from "./audio-context.js"',
+    );
+    expect(audioEntrySource).toContain('["audio-context", AudioContextElement]');
+
+    for (const moduleName of [
+      "audio-context.js",
+      "audio-event.js",
+      "audio-graph-plan.js",
+      "audio-graph-runtime.js",
+      "audio-input-mic.js",
+      "audio-input-file.js",
+      "audio-biquad-filter.js",
+      "audio-node-element.js",
+      "audio-output.js",
+    ]) {
+      const moduleResponse = await fetch(
+        `${server.httpUrl}/src/audio/${moduleName}`,
+      );
+      expect(moduleResponse.status, `${moduleName} is served`).toBe(200);
+    }
 
     const client = new WebSocket(server.wsUrl);
     await new Promise((resolve) => client.once("open", resolve));
