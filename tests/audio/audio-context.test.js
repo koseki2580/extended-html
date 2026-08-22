@@ -519,6 +519,31 @@ describe("AudioContextElement", () => {
     );
   });
 
+  it("applies staged configuration when a cached Biquad is re-added", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const source = context.querySelector("audio-input-file");
+    const filter = context.querySelector("audio-biquad-filter");
+    const nodeCreations = FakeAudioContext.nodeCreations;
+
+    filter.remove();
+    filter.setAttribute("frequency", "900");
+    await flushReconciliation();
+    assertEqual(filter.frequency.value, 350, "owned removal keeps value staged");
+    assertEqual(filter._getAudioOwner(), null, "removed filter owner is released");
+
+    source.append(filter);
+    await flushReconciliation();
+
+    assertEqual(filter.frequency.value, 900, "re-added filter applies staged value");
+    assertEqual(
+      FakeAudioContext.nodeCreations,
+      nodeCreations,
+      "re-added filter reuses its cached native node",
+    );
+  });
+
   it("reconciles added and removed running sources without restarting unchanged sources", async () => {
     const { context, file: first } = createElement();
     document.body.append(context);

@@ -101,16 +101,22 @@ export class AudioGraphRuntime {
     const addedEdgeKeys = [];
     const activatedSources = [];
     const configuredNodes = [];
+    const configuredElements = new Set();
+    const configureNode = (element) => {
+      if (configuredElements.has(element) || !this.#nodes.has(element)) return;
+      const configuration = element._captureAudioConfiguration();
+      if (configuration !== null) {
+        configuredNodes.push({ element, configuration });
+      }
+      element._configureAudioNode(this.#nodes.get(element));
+      configuredElements.add(element);
+    };
 
     try {
       this.#throwIfCandidateStale(isCurrent);
       for (const { element } of candidatePlan.nodes) {
         if (!previousElements.has(element) || !this.#nodes.has(element)) continue;
-        const configuration = element._captureAudioConfiguration();
-        if (configuration !== null) {
-          configuredNodes.push({ element, configuration });
-        }
-        element._configureAudioNode(this.#nodes.get(element));
+        configureNode(element);
       }
 
       for (const { element, role } of addedNodes) {
@@ -124,6 +130,7 @@ export class AudioGraphRuntime {
         } else {
           this.#createAndAttachNode(element);
         }
+        configureNode(element);
       }
 
       this.#applyAvailableEdges(candidatePlan, addedEdgeKeys);
@@ -136,6 +143,7 @@ export class AudioGraphRuntime {
           this.#throwIfTerminalRequested();
           this.#throwIfCandidateStale(isCurrent);
           this.#captureActivatedNode(element);
+          configureNode(element);
           this.#applyAvailableEdges(candidatePlan, addedEdgeKeys);
           this.#throwIfTerminalRequested();
           this.#throwIfCandidateStale(isCurrent);
