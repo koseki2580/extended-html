@@ -11,7 +11,7 @@ const closeButton = document.querySelector("#close");
 const eventLog = document.querySelector("[data-testid='event-log']");
 
 let started = false;
-let closed = false;
+let terminal = false;
 let busy = false;
 let toneUrl = null;
 
@@ -83,40 +83,50 @@ const logEvent = (event) => {
   eventLog.prepend(entry);
 };
 
-const displayState = (value) => {
+const renderState = () => {
+  const value = context.state;
   state.textContent = `${value[0].toUpperCase()}${value.slice(1)}`;
   state.dataset.state = value;
 };
 
 const updateControls = () => {
   actions.setAttribute("aria-busy", String(busy));
-  startButton.disabled = busy || started || closed;
-  suspendButton.disabled = busy || closed || context.state !== "running";
-  resumeButton.disabled = busy || closed || !started || context.state !== "suspended";
-  closeButton.disabled = busy || closed;
+  startButton.disabled = busy || started || terminal;
+  suspendButton.disabled = busy || terminal || context.state !== "running";
+  resumeButton.disabled =
+    busy || terminal || !started || context.state !== "suspended";
+  closeButton.disabled = busy || terminal;
 };
 
-const runAction = async (action) => {
+const runAction = async (action, { recoveryFocus = null } = {}) => {
   // Serialize user gestures at the page boundary while the context owns source order.
-  if (busy || closed) return;
+  if (busy || terminal) return;
   busy = true;
   errorMessage.textContent = "";
   updateControls();
+  let failed = false;
   try {
     await action();
-    displayState(context.state);
   } catch (error) {
-    displayState("error");
+    failed = true;
     errorMessage.textContent = `${error.name}: ${error.message}`;
   } finally {
     busy = false;
+    renderState();
     updateControls();
+    if (failed && recoveryFocus !== null && !recoveryFocus.disabled) {
+      recoveryFocus.focus();
+    }
   }
 };
 
 for (const type of ["statechange", "error"]) {
   context.addEventListener(type, (event) => {
     logEvent(event);
+    if (type === "statechange") {
+      renderState();
+      updateControls();
+    }
     if (type === "error") {
       errorMessage.textContent = `${event.detail.data.name}: ${event.detail.data.message}`;
     }
@@ -131,19 +141,26 @@ for (const type of ["play", "playing", "pause", "ended", "error"]) {
 
 startButton.addEventListener("click", () => {
   started = true;
-  runAction(() => context.resume());
+  runAction(() => context.resume(), { recoveryFocus: resumeButton });
 });
 suspendButton.addEventListener("click", () => runAction(() => context.suspend()));
-resumeButton.addEventListener("click", () => runAction(() => context.resume()));
+resumeButton.addEventListener("click", () =>
+  runAction(() => context.resume(), { recoveryFocus: resumeButton }),
+);
 closeButton.addEventListener("click", () =>
   runAction(async () => {
-    await context.close();
-    closed = true;
-    releaseToneUrl();
+    try {
+      await context.close();
+    } finally {
+      // A close request is terminal even when native cleanup reports a failure.
+      terminal = true;
+      releaseToneUrl();
+    }
   }),
 );
 
 toneUrl = createToneUrl();
 music.src = toneUrl;
 window.addEventListener("beforeunload", releaseToneUrl, { once: true });
+renderState();
 updateControls();

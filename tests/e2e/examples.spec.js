@@ -240,17 +240,26 @@ test("Audio example exposes a failed start and keeps recovery controls available
   const errors = watchPageErrors(page);
   await page.goto(`${server.httpUrl}/examples/audio-context/`);
   await page.evaluate(() => {
-    document.querySelector("audio-context").resume = async () => {
-      throw new DOMException(
-        "Microphone permission denied by test",
-        "NotAllowedError",
-      );
+    const audio = document.querySelector("audio-context");
+    const resume = audio.resume.bind(audio);
+    let attempts = 0;
+    audio.resume = () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(
+          new DOMException(
+            "Microphone permission denied by test",
+            "NotAllowedError",
+          ),
+        );
+      }
+      return resume();
     };
   });
 
   await page.getByRole("button", { name: "Start audio" }).click();
 
-  await expect(page.getByTestId("audio-state")).toHaveText("Error");
+  await expect(page.getByTestId("audio-state")).toHaveText("Suspended");
   await expect(page.getByRole("alert")).toContainText(
     "NotAllowedError: Microphone permission denied by test",
   );
@@ -262,6 +271,96 @@ test("Audio example exposes a failed start and keeps recovery controls available
   await expect(page.getByRole("button", { name: "Suspend audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Resume audio" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Close audio" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Resume audio" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Resume audio" }).click();
+  await expect(page.getByTestId("audio-state")).toHaveText("Running");
+  await page.getByRole("button", { name: "Close audio" }).click();
+  await expect(page.getByTestId("audio-state")).toHaveText("Closed");
+  expect(errors).toEqual([]);
+});
+
+test("Audio example follows public statechange events", async ({ page }) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/`);
+  await page.evaluate(() => {
+    const audio = document.querySelector("audio-context");
+    let publicState = "suspended";
+    Object.defineProperty(audio, "state", {
+      configurable: true,
+      get: () => publicState,
+    });
+    audio.resume = async () => {
+      publicState = "running";
+    };
+    globalThis.dispatchExampleState = (nextState) => {
+      publicState = nextState;
+      audio.dispatchEvent(
+        new CustomEvent("statechange", {
+          detail: {
+            data: new Event("statechange"),
+            metadata: {
+              contextId: "audio",
+              nodeId: "audio",
+              nodeName: "audio-context",
+            },
+          },
+        }),
+      );
+    };
+  });
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-state")).toHaveText("Running");
+  await page.evaluate(() => globalThis.dispatchExampleState("suspended"));
+
+  await expect(page.getByTestId("audio-state")).toHaveText("Suspended");
+  await expect(page.getByRole("button", { name: "Suspend audio" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Resume audio" })).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test("Audio example remains terminal when close cleanup rejects", async ({ page }) => {
+  await page.addInitScript(() => {
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    globalThis.exampleRevokeCalls = 0;
+    URL.revokeObjectURL = (url) => {
+      globalThis.exampleRevokeCalls += 1;
+      revokeObjectURL(url);
+    };
+  });
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/`);
+  await page.evaluate(() => {
+    const audio = document.querySelector("audio-context");
+    const close = audio.close.bind(audio);
+    globalThis.exampleCloseCalls = 0;
+    audio.close = async () => {
+      globalThis.exampleCloseCalls += 1;
+      await close();
+      throw new DOMException("Cleanup report failed by test", "OperationError");
+    };
+  });
+
+  await page.getByRole("button", { name: "Close audio" }).click();
+
+  await expect(page.getByTestId("audio-state")).toHaveText("Closed");
+  await expect(page.getByRole("alert")).toContainText(
+    "OperationError: Cleanup report failed by test",
+  );
+  await expect(page.getByRole("group", { name: "Audio lifecycle" })).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  for (const name of ["Start audio", "Suspend audio", "Resume audio", "Close audio"]) {
+    await expect(page.getByRole("button", { name })).toBeDisabled();
+  }
+  expect(
+    await page.evaluate(() => document.querySelector("audio-context").state),
+  ).toBe("closed");
+  expect(await page.evaluate(() => globalThis.exampleRevokeCalls)).toBe(1);
+  await page.evaluate(() => document.querySelector("#close").click());
+  expect(await page.evaluate(() => globalThis.exampleCloseCalls)).toBe(1);
   expect(errors).toEqual([]);
 });
 
