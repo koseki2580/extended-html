@@ -17,9 +17,25 @@ const assertEqual = (actual, expected, message) => {
 
 class RuntimeNodeElement extends AudioNodeElement {
   nativeNode = null;
+  configuration = null;
+  candidateConfiguration = null;
 
   _createAudioNode() {
     return this.nativeNode;
+  }
+
+  _configureAudioNode() {
+    if (this.candidateConfiguration !== null) {
+      this.configuration = this.candidateConfiguration;
+    }
+  }
+
+  _captureAudioConfiguration() {
+    return this.configuration;
+  }
+
+  _restoreAudioConfiguration(configuration) {
+    this.configuration = configuration;
   }
 }
 
@@ -545,6 +561,8 @@ describe("AudioGraphRuntime", () => {
     );
     await runtime.resume();
     fixture.events.length = 0;
+    fixture.filter.configuration = 350;
+    fixture.filter.candidateConfiguration = 900;
     const added = document.createElement("test-runtime-node");
     added.nativeNode = createNativeNode("added", fixture.events);
     added.nativeNode.connect = () => {
@@ -582,6 +600,11 @@ describe("AudioGraphRuntime", () => {
     );
     assertEqual(added._getAudioOwner(), null, "candidate node owner is released");
     assertEqual(fixture.first._getAudioOwner(), fixture.owner, "old owner remains");
+    assertEqual(
+      fixture.filter.configuration,
+      350,
+      "retained node configuration is rolled back",
+    );
   });
 
   it("cleans a failed new source while preserving previously running sources", async () => {

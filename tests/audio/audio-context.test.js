@@ -462,6 +462,34 @@ describe("AudioContextElement", () => {
     assertEqual(errors.length, 1, "valid recovery adds no error");
   });
 
+  it("does not commit staged filter configuration when the candidate topology is invalid", async () => {
+    const { context } = createElement();
+    document.body.append(context);
+    await context.resume();
+    const source = context.querySelector("audio-input-file");
+    const filter = context.querySelector("audio-biquad-filter");
+    const nodeCreations = FakeAudioContext.nodeCreations;
+    const errors = [];
+    context.onerror = (event) => errors.push(event.detail.data);
+
+    filter.setAttribute("frequency", "900");
+    source.setAttribute("to", "missing");
+    await flushReconciliation();
+
+    assertEqual(errors.length, 1, "invalid combined candidate reports an error");
+    assertEqual(filter.frequency.value, 350, "last valid native value is preserved");
+
+    source.removeAttribute("to");
+    await flushReconciliation();
+
+    assertEqual(filter.frequency.value, 900, "staged value applies after recovery");
+    assertEqual(
+      FakeAudioContext.nodeCreations,
+      nodeCreations,
+      "recovery reuses the native filter",
+    );
+  });
+
   it("reconciles added and removed running sources without restarting unchanged sources", async () => {
     const { context, file: first } = createElement();
     document.body.append(context);

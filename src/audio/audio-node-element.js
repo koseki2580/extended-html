@@ -70,6 +70,12 @@ export class AudioNodeElement extends AudioEventTargetElement {
 
   _configureAudioNode() {}
 
+  _captureAudioConfiguration() {
+    return null;
+  }
+
+  _restoreAudioConfiguration() {}
+
   _validateAudioConfiguration() {}
 }
 

@@ -96,8 +96,18 @@ export class AudioGraphRuntime {
     );
     const addedEdgeKeys = [];
     const activatedSources = [];
+    const configuredNodes = [];
 
     try {
+      for (const { element } of candidatePlan.nodes) {
+        if (!previousElements.has(element) || !this.#nodes.has(element)) continue;
+        const configuration = element._captureAudioConfiguration();
+        if (configuration !== null) {
+          configuredNodes.push({ element, configuration });
+        }
+        element._configureAudioNode(this.#nodes.get(element));
+      }
+
       for (const { element, role } of addedNodes) {
         element._setAudioOwner(this.#owner);
         if (role === "source") {
@@ -129,6 +139,7 @@ export class AudioGraphRuntime {
         activatedSources,
         addedEdgeKeys,
         addedNodes,
+        configuredNodes,
       );
       throw error;
     }
@@ -320,7 +331,12 @@ export class AudioGraphRuntime {
     return this.#elementIds.get(element);
   }
 
-  async #rollbackCandidate(activatedSources, addedEdgeKeys, addedNodes) {
+  async #rollbackCandidate(
+    activatedSources,
+    addedEdgeKeys,
+    addedNodes,
+    configuredNodes,
+  ) {
     for (const element of [...activatedSources].reverse()) {
       try {
         await element._close();
@@ -333,6 +349,13 @@ export class AudioGraphRuntime {
       if (edge) this.#disconnectEdge(key, edge);
     }
     for (const node of [...addedNodes].reverse()) this.#releaseNode(node);
+    for (const { element, configuration } of [...configuredNodes].reverse()) {
+      try {
+        element._restoreAudioConfiguration(configuration);
+      } catch {
+        // Rollback remains best-effort and preserves the candidate failure.
+      }
+    }
   }
 
   async #rollback(activated) {

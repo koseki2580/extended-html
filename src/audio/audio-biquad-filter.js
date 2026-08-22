@@ -61,6 +61,8 @@ export class AudioBiquadFilterElement extends AudioNodeElement {
   attributeChangedCallback(name, oldValue, newValue) {
     super.attributeChangedCallback(name, oldValue, newValue);
     if (oldValue === newValue || this.#filterNode === null) return;
+    // Context-owned changes are committed by the graph transaction after validation.
+    if (this._getAudioOwner() !== null) return;
 
     if (name === "type") {
       try {
@@ -125,6 +127,21 @@ export class AudioBiquadFilterElement extends AudioNodeElement {
     for (const [name, value] of configuration.parameters) {
       node[PARAMETER_ATTRIBUTES.get(name)].value = value;
     }
+  }
+
+  _captureAudioConfiguration() {
+    if (this.#filterNode === null) return null;
+    return {
+      type: this.#filterNode.type,
+      parameters: [...PARAMETER_ATTRIBUTES.entries()].map(
+        ([name, parameterName]) => [name, this.#filterNode[parameterName].value],
+      ),
+    };
+  }
+
+  _restoreAudioConfiguration(configuration) {
+    if (this.#filterNode === null || configuration === null) return;
+    this._configureAudioNode(this.#filterNode, configuration);
   }
 
   _validateAudioConfiguration() {
