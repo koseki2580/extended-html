@@ -1,6 +1,9 @@
 const closedError = () =>
   new DOMException("Audio graph runtime is closed", "InvalidStateError");
 
+const closingError = () =>
+  new DOMException("Audio context is closing", "InvalidStateError");
+
 const edgeKey = (edge, elementIndexes) =>
   `${elementIndexes.get(edge.from)}:${elementIndexes.get(edge.to)}`;
 
@@ -15,6 +18,7 @@ export class AudioGraphRuntime {
   #resumePromise = null;
   #suspendPromise = null;
   #closePromise = null;
+  #terminalRequested = false;
 
   constructor(owner, context, plan) {
     this.#owner = owner;
@@ -28,6 +32,7 @@ export class AudioGraphRuntime {
 
   resume() {
     if (this.#state === "closed") return Promise.reject(closedError());
+    if (this.#terminalRequested) return Promise.reject(closingError());
     if (this.#state === "running" && this.#context.state === "running") {
       return Promise.resolve();
     }
@@ -68,13 +73,20 @@ export class AudioGraphRuntime {
 
   close() {
     if (this.#closePromise !== null) return this.#closePromise;
+    this._requestTerminalClose();
     this.#closePromise = this.#performClose();
     return this.#closePromise;
   }
 
+  _requestTerminalClose() {
+    this.#terminalRequested = true;
+  }
+
   async #performResume() {
+    this.#throwIfTerminalRequested();
     if (this.#state === "running") {
       await this.#context.resume();
+      this.#throwIfTerminalRequested();
       return;
     }
 
@@ -84,15 +96,21 @@ export class AudioGraphRuntime {
       // A prior failed attempt may have released edges while retaining reusable nodes.
       this.#applyAvailableEdges();
       await this.#context.resume();
+      this.#throwIfTerminalRequested();
 
       for (const { element } of this.#plan.sources) {
+        this.#throwIfTerminalRequested();
         // Include the current source so a partially acquired resource is also released.
         activated.push(element);
         await element._activate(this.#context);
+        this.#throwIfTerminalRequested();
         this.#captureActivatedNode(element);
         this.#applyAvailableEdges();
+        this.#throwIfTerminalRequested();
         await element._connected();
+        this.#throwIfTerminalRequested();
       }
+      this.#throwIfTerminalRequested();
       this.#state = "running";
     } catch (error) {
       await this.#rollback(activated);
@@ -228,6 +246,10 @@ export class AudioGraphRuntime {
       }
     }
     this.#appliedEdges.clear();
+  }
+
+  #throwIfTerminalRequested() {
+    if (this.#terminalRequested) throw closingError();
   }
 
   #releaseNodes() {

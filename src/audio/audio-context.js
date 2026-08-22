@@ -60,6 +60,7 @@ export class AudioContextElement extends AudioEventTargetElement {
   close() {
     if (this.#closePromise !== null) return this.#closePromise;
     this.#closed = true;
+    this.#runtime?._requestTerminalClose();
     this.#closePromise = this.#enqueue(() => this.#performClose());
     return this.#closePromise;
   }
@@ -78,6 +79,7 @@ export class AudioContextElement extends AudioEventTargetElement {
 
   async #performResume() {
     try {
+      if (this.#closed) throw closedError();
       if (this.#runtime === null) {
         // Validation must complete before the first browser resource is created.
         const plan = buildAudioGraphPlan(this);

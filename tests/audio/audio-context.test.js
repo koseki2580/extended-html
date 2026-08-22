@@ -358,4 +358,38 @@ describe("AudioContextElement", () => {
     assertEqual(native.state, "closed", "removal closes native context");
     assertEqual(unhandled, false, "cleanup rejection is handled");
   });
+
+  it("cancels in-flight resume when removed before starting later sources", async () => {
+    const { context, file: first } = createElement();
+    const second = document.createElement("audio-input-file");
+    second.append(document.createElement("audio-output"));
+    context.append(second);
+    let resolveFirst;
+    let firstPauses = 0;
+    let secondPlays = 0;
+    first._getMediaElement().play = () =>
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+    first._getMediaElement().pause = () => {
+      firstPauses += 1;
+    };
+    second._getMediaElement().play = async () => {
+      secondPlays += 1;
+    };
+    document.body.append(context);
+    const resumeResult = context.resume().catch((error) => error);
+    while (!resolveFirst) await Promise.resolve();
+
+    context.remove();
+    const closeResult = context.close();
+    resolveFirst();
+    const resumeError = await resumeResult;
+    await closeResult;
+
+    assertEqual(resumeError.name, "InvalidStateError", "resume cancellation name");
+    assertEqual(secondPlays, 0, "later file never starts");
+    assert(firstPauses >= 1, "late first playback is released");
+    assertEqual(context.state, "closed", "removal close completes");
+  });
 });

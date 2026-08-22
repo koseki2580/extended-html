@@ -408,4 +408,50 @@ describe("AudioGraphRuntime", () => {
     assertEqual(secondActivations, 2, "second source reactivates");
     assertEqual(fixture.context.state, "running", "native context is repaired");
   });
+
+  it("cancels in-flight activation before opening or starting later sources", async () => {
+    const fixture = createFixture();
+    let resolveFirst;
+    let firstConnected = 0;
+    let secondActivations = 0;
+    let firstClosed = false;
+    fixture.first.activate = () =>
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+    fixture.first.connected = async () => {
+      firstConnected += 1;
+    };
+    fixture.first.close = async () => {
+      firstClosed = true;
+    };
+    fixture.second.activate = async () => {
+      secondActivations += 1;
+    };
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    const resumeResult = runtime.resume().catch((error) => error);
+    while (!resolveFirst) await Promise.resolve();
+
+    const firstClose = runtime.close();
+    const secondClose = runtime.close();
+    assertEqual(firstClose, secondClose, "terminal callers share completion");
+    resolveFirst();
+    const resumeError = await resumeResult;
+    await firstClose;
+
+    assertEqual(resumeError.name, "InvalidStateError", "resume cancellation name");
+    assertEqual(
+      resumeError.message,
+      "Audio context is closing",
+      "resume cancellation message",
+    );
+    assertEqual(firstConnected, 0, "first source never emits open");
+    assertEqual(secondActivations, 0, "later source never starts");
+    assertEqual(firstClosed, true, "late first resource is terminally released");
+    assertEqual(runtime.state, "closed", "close completes terminally");
+  });
 });
