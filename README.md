@@ -2,12 +2,10 @@
 
 Use browser JavaScript APIs as build-free HTML custom elements.
 
-Register every available custom element from the package root:
+Register every available custom element directly from GitHub Pages:
 
 ```html
-<script type="module">
-  import "extended-html";
-</script>
+<script type="module" src="https://koseki2580.github.io/extended-html/src/index.js"></script>
 ```
 
 ## Use `<web-socket>`
@@ -57,9 +55,7 @@ without changing the methods or events:
 Register only the five Audio elements when the aggregate entry is not needed:
 
 ```html
-<script type="module">
-  import "extended-html/audio-context";
-</script>
+<script type="module" src="https://koseki2580.github.io/extended-html/src/audio/index.js"></script>
 ```
 
 Describe the audio graph through nesting, then start every source with one

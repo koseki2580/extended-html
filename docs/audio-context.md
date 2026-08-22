@@ -6,26 +6,34 @@ and require no framework or runtime build step.
 
 ## Import
 
-Register every element exported by this package:
+In a browser, register every published custom element directly from GitHub
+Pages:
 
-```js
-import "extended-html";
+```html
+<script type="module" src="https://koseki2580.github.io/extended-html/src/index.js"></script>
 ```
 
 Register only the Audio elements:
 
-```js
-import "extended-html/audio-context";
+```html
+<script type="module" src="https://koseki2580.github.io/extended-html/src/audio/index.js"></script>
 ```
 
-Both entry points are safe to import together. They register exactly these five
-tags, and each definition is guarded against duplicate registration:
+When the package is installed in an environment that resolves package exports,
+the equivalent specifiers are `custom-html` and `custom-html/audio-context`.
+
+Both entry points are safe to load together because each definition is guarded
+against duplicate registration. The Audio-only entry registers exactly these
+five tags:
 
 - `<audio-context>`
 - `<audio-input-mic>`
 - `<audio-input-file>`
 - `<audio-biquad-filter>`
 - `<audio-output>`
+
+The aggregate entry also registers the package's other elements, including
+`<web-socket>`.
 
 ## Basic graph
 
@@ -44,9 +52,10 @@ its direct audio children:
 <button id="start" type="button">Start audio</button>
 
 <script type="module">
-  import "extended-html/audio-context";
+  import "https://koseki2580.github.io/extended-html/src/audio/index.js";
 
   const audio = document.querySelector("#audio");
+  const start = document.querySelector("#start");
   start.addEventListener("click", () => audio.resume());
 </script>
 ```
@@ -71,8 +80,9 @@ Each `<audio-context>` owns an isolated graph and ID scope. The following
 structural rules are validated before the first native `AudioContext` or audio
 node is created:
 
-- A direct child of `<audio-context>` must be `<audio-input-file>` or
-  `<audio-input-mic>`. These elements are the graph's root sources.
+- Every direct audio graph child of `<audio-context>` must be
+  `<audio-input-file>` or `<audio-input-mic>`. These elements are the graph's
+  root sources. Ordinary non-audio children do not become graph nodes.
 - A processor or output must be a direct child of another recognized audio
   node. Ordinary HTML wrappers cannot appear inside an audio path.
 - `<audio-output>` is a sink: it cannot contain audio graph elements or declare

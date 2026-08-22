@@ -8,8 +8,14 @@ test("README presents extended-html usage and delegates detail to the guides", a
   const readme = await readFile(readmePath, "utf8");
 
   assert.match(readme, /^# Extended HTML$/m);
-  assert.match(readme, /import "extended-html";/);
-  assert.match(readme, /import "extended-html\/audio-context";/);
+  assert.match(
+    readme,
+    /<script type="module" src="https:\/\/koseki2580\.github\.io\/extended-html\/src\/index\.js"><\/script>/,
+  );
+  assert.match(
+    readme,
+    /<script type="module" src="https:\/\/koseki2580\.github\.io\/extended-html\/src\/audio\/index\.js"><\/script>/,
+  );
   assert.match(readme, /<web-socket/);
   assert.match(readme, /socket\.open\(\)/);
   assert.match(readme, /socket\.send\(/);
@@ -29,4 +35,5 @@ test("README presents extended-html usage and delegates detail to the guides", a
   assert.doesNotMatch(readme, /Pages artifact/i);
   assert.doesNotMatch(readme, /deployment workflow/i);
   assert.doesNotMatch(readme, /implementation plan/i);
+  assert.doesNotMatch(readme, /import "extended-html(?:\/audio-context)?";/);
 });
