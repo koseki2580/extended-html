@@ -29,10 +29,15 @@
       const file = document.querySelector("#music");
       const events = [];
       let micStream = null;
+      const micStreams = [];
 
       const record = (node) => (event) => {
         const data = event.detail.data;
-        if (data instanceof MediaStream) micStream = data;
+        if (data instanceof MediaStream) {
+          micStream = data;
+          micStreams.push(data);
+        }
+        const eventStream = data?.stream instanceof MediaStream ? data.stream : null;
         events.push({
           node,
           type: event.type,
@@ -40,19 +45,21 @@
           metadata: event.detail.metadata,
           contextState: context.state,
           trackStates:
-            data instanceof MediaStream
-              ? data.getTracks().map(({ enabled, readyState }) => ({
+            data instanceof MediaStream || eventStream
+              ? (eventStream ?? data).getTracks().map(({ enabled, readyState }) => ({
                   enabled,
                   readyState,
                 }))
               : null,
+          previousDeviceId: data?.previousDeviceId ?? null,
+          deviceId: data?.deviceId ?? null,
         });
       };
 
-      for (const type of ["statechange", "error"]) {
+      for (const type of ["statechange", "sinkchange", "error"]) {
         context.addEventListener(type, record("audio"));
       }
-      for (const type of ["open", "close", "error"]) {
+      for (const type of ["open", "close", "devicechange", "error"]) {
         mic.addEventListener(type, record("mic"));
       }
       for (const type of ["play", "playing", "pause", "ended", "error"]) {
@@ -68,6 +75,7 @@
       globalThis.audioFixture = {
         ready: true,
         context,
+        mic,
         file,
         events,
         snapshot: () => ({
@@ -75,6 +83,12 @@
           contextState: context.state,
           filePaused: file.paused,
           micTracks: trackStates(),
+          micStreamHistory: micStreams.map((stream) =>
+            stream.getTracks().map(({ enabled, readyState }) => ({
+              enabled,
+              readyState,
+            })),
+          ),
           events: structuredClone(events),
         }),
       };

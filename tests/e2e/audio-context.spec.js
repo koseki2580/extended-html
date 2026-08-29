@@ -177,6 +177,102 @@ test("one context resume starts the nested microphone and file graph in DOM orde
   }
 });
 
+test("an exact microphone selection can be replaced and DOM removal releases it", async ({
+  page,
+}) => {
+  const browserErrors = await openFixture(page);
+  const selectedDeviceId = await page.evaluate(async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const input = devices.find((device) => device.kind === "audioinput");
+    if (!input?.deviceId) throw new Error("fake audio input device is unavailable");
+    const mediaDevices = navigator.mediaDevices;
+    const getUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+    globalThis.audioConstraints = [];
+    Object.defineProperty(mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: (constraints) => {
+        globalThis.audioConstraints.push(structuredClone(constraints));
+        return getUserMedia(constraints);
+      },
+    });
+    await globalThis.audioFixture.mic.setDeviceId(input.deviceId);
+    return input.deviceId;
+  });
+
+  await page.evaluate(() => globalThis.audioFixture.context.resume());
+  await page.waitForFunction(
+    () => globalThis.audioFixture.events.some(({ node, type }) => node === "mic" && type === "open"),
+  );
+  await page.evaluate(() => globalThis.audioFixture.mic.setDeviceId(""));
+  await page.waitForFunction(
+    () => globalThis.audioFixture.events.some(({ node, type }) => node === "mic" && type === "devicechange"),
+  );
+
+  const switched = await snapshot(page);
+  expect(await page.evaluate(() => globalThis.audioConstraints)).toEqual([
+    { audio: { deviceId: { exact: selectedDeviceId } } },
+    { audio: true },
+  ]);
+  expect(switched.micStreamHistory).toEqual([
+    [{ enabled: true, readyState: "ended" }],
+    [{ enabled: true, readyState: "live" }],
+  ]);
+  expect(
+    switched.events.find(({ node, type }) => node === "mic" && type === "devicechange"),
+  ).toMatchObject({
+    previousDeviceId: selectedDeviceId,
+    deviceId: "",
+    trackStates: [{ enabled: true, readyState: "live" }],
+  });
+
+  await page.evaluate(() => globalThis.audioFixture.context.remove());
+  await page.waitForFunction(() => globalThis.audioFixture.context.state === "closed");
+  const removed = await snapshot(page);
+  expect(removed.micStreamHistory[1]).toEqual([
+    { enabled: true, readyState: "ended" },
+  ]);
+  expect(browserErrors).toEqual([]);
+});
+
+test("a failed live microphone selection preserves the connected stream", async ({
+  page,
+}) => {
+  const browserErrors = await openFixture(page);
+  await page.evaluate(() => globalThis.audioFixture.context.resume());
+  await page.waitForFunction(() => globalThis.audioFixture.context.state === "running");
+
+  const result = await page.evaluate(async () => {
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: async () => {
+        throw new DOMException("device missing", "NotFoundError");
+      },
+    });
+    let rejection = null;
+    try {
+      await globalThis.audioFixture.mic.setDeviceId("missing");
+    } catch (error) {
+      rejection = { name: error.name, message: error.message };
+    }
+    return { rejection, snapshot: globalThis.audioFixture.snapshot() };
+  });
+
+  expect(result.rejection).toEqual({
+    name: "NotFoundError",
+    message: "device missing",
+  });
+  expect(result.snapshot.micTracks).toEqual([
+    { enabled: true, readyState: "live" },
+  ]);
+  expect(result.snapshot.events.filter(({ type }) => type === "devicechange")).toEqual(
+    [],
+  );
+  expect(await page.locator("#mic").getAttribute("device-id")).toBe("");
+
+  await page.evaluate(() => globalThis.audioFixture.context.close());
+  expect(browserErrors).toEqual([]);
+});
+
 test("suspend and resume pause and restart all sources through the context", async ({ page }) => {
   const browserErrors = await openFixture(page);
   await page.evaluate(() => globalThis.audioFixture.context.resume());

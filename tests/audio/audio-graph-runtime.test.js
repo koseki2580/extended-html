@@ -563,6 +563,87 @@ describe("AudioGraphRuntime", () => {
     );
   });
 
+  it("atomically replaces a source before releasing its previous resource", async () => {
+    const fixture = createFixture();
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+    const previousNode = fixture.first.nativeNode;
+    const replacementNode = createNativeNode("replacement", fixture.events);
+
+    runtime.replaceSource(fixture.first, {
+      node: replacementNode,
+      commit() {
+        fixture.events.push("commit");
+        fixture.first._detachAudioNode(previousNode);
+        fixture.first._attachAudioNode(replacementNode);
+        return { node: previousNode };
+      },
+      connected() {
+        fixture.events.push("notify");
+      },
+      releasePrevious() {
+        fixture.events.push("release:previous");
+      },
+      rollback() {
+        fixture.events.push("rollback:replacement");
+      },
+    });
+
+    assertEqual(
+      fixture.events.join(","),
+      "connect:replacement->filter,commit,disconnect:first->filter,notify,release:previous",
+      "replacement transaction order",
+    );
+    assertEqual(fixture.first._getAudioNode(), replacementNode, "replacement is attached");
+  });
+
+  it("rolls back a source candidate when its replacement edge cannot connect", async () => {
+    const fixture = createFixture();
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+    const failure = new Error("replacement connection failed");
+    const replacementNode = createNativeNode("replacement", fixture.events);
+    replacementNode.connect = () => {
+      fixture.events.push("connect:replacement->filter");
+      throw failure;
+    };
+    let rejected;
+
+    try {
+      runtime.replaceSource(fixture.first, {
+        node: replacementNode,
+        commit() {
+          throw new Error("must not commit");
+        },
+        connected() {},
+        releasePrevious() {},
+        rollback() {
+          fixture.events.push("rollback:replacement");
+        },
+      });
+    } catch (error) {
+      rejected = error;
+    }
+
+    assertEqual(rejected, failure, "native connection failure is preserved");
+    assertEqual(
+      fixture.events.join(","),
+      "connect:replacement->filter,disconnect:replacement->filter,rollback:replacement",
+      "candidate-only resources roll back",
+    );
+    assertEqual(fixture.first._getAudioNode(), fixture.first.nativeNode, "old node remains");
+  });
+
   it("keeps a shared native destination connected until its last logical edge is removed", async () => {
     const events = [];
     const owner = document.createElement("div");

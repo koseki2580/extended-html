@@ -75,6 +75,34 @@ const installMediaDevices = (getUserMedia) => {
 };
 
 describe("AudioInputMicElement", () => {
+  it("reflects and stages an exact microphone device without acquiring media", async () => {
+    const element = createElement();
+    const constraints = [];
+    const stream = createStream([createTrack()]);
+    const restore = installMediaDevices(async (value) => {
+      constraints.push(value);
+      return stream;
+    });
+
+    try {
+      assertEqual(element.deviceId, "", "default device id");
+      await element.setDeviceId("usb-mic");
+      assertEqual(element.getAttribute("device-id"), "usb-mic", "reflected attribute");
+      assertEqual(element.deviceId, "usb-mic", "reflected property");
+      assertEqual(constraints.length, 0, "staging does not request permission");
+
+      await element._activate(createContext());
+
+      assertEqual(
+        JSON.stringify(constraints),
+        JSON.stringify([{ audio: { deviceId: { exact: "usb-mic" } } }]),
+        "activation requests the exact staged device",
+      );
+    } finally {
+      restore();
+    }
+  });
+
   it("defers open until the runtime reports that graph connections are ready", async () => {
     const element = createElement();
     element.id = "mic";
@@ -398,6 +426,12 @@ describe("AudioInputMicElement", () => {
       await element._close();
       await assertRejects(
         element._activate(firstContext),
+        DOMException,
+        "InvalidStateError",
+        "Microphone input is closed",
+      );
+      await assertRejects(
+        element.setDeviceId("later"),
         DOMException,
         "InvalidStateError",
         "Microphone input is closed",

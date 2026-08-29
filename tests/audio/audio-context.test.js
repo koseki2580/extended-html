@@ -1,4 +1,5 @@
 import { AudioContextElement } from "../../src/audio/audio-context.js";
+import { AudioInputMicElement } from "../../src/audio/audio-input-mic.js";
 import { AudioInputFileElement } from "../../src/audio/audio-input-file.js";
 import { AudioBiquadFilterElement } from "../../src/audio/audio-biquad-filter.js";
 import { AudioOutputElement } from "../../src/audio/audio-output.js";
@@ -31,6 +32,9 @@ if (!customElements.get("audio-context")) {
 if (!customElements.get("audio-input-file")) {
   customElements.define("audio-input-file", AudioInputFileElement);
 }
+if (!customElements.get("audio-input-mic")) {
+  customElements.define("audio-input-mic", AudioInputMicElement);
+}
 if (!customElements.get("audio-biquad-filter")) {
   customElements.define("audio-biquad-filter", AudioBiquadFilterElement);
 }
@@ -42,12 +46,14 @@ class FakeAudioContext extends EventTarget {
   static instances = [];
   static nodeCreations = 0;
   static mediaSourceCreations = 0;
+  static sinkFailure = null;
 
   constructor() {
     super();
     this.state = "suspended";
     this.currentTime = 12.5;
     this.sampleRate = 48_000;
+    this.sinkId = "";
     this.events = [];
     this.destination = this.createNode("destination");
     FakeAudioContext.instances.push(this);
@@ -65,6 +71,10 @@ class FakeAudioContext extends EventTarget {
   createMediaElementSource() {
     FakeAudioContext.mediaSourceCreations += 1;
     return this.createNode("file");
+  }
+
+  createMediaStreamSource(stream) {
+    return this.createNode(`mic:${stream.id}`);
   }
 
   createBiquadFilter() {
@@ -95,6 +105,15 @@ class FakeAudioContext extends EventTarget {
     this.state = "closed";
     this.dispatchEvent(new Event("statechange"));
   }
+
+  async setSinkId(sinkId) {
+    this.events.push(`sink:${sinkId}`);
+    if (FakeAudioContext.sinkFailure !== null) {
+      throw FakeAudioContext.sinkFailure;
+    }
+    this.sinkId = sinkId;
+    this.dispatchEvent(new Event("sinkchange"));
+  }
 }
 
 const nativeDescriptor = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
@@ -103,6 +122,7 @@ const installFakeAudioContext = () => {
   FakeAudioContext.instances.length = 0;
   FakeAudioContext.nodeCreations = 0;
   FakeAudioContext.mediaSourceCreations = 0;
+  FakeAudioContext.sinkFailure = null;
   Object.defineProperty(globalThis, "AudioContext", {
     configurable: true,
     writable: true,
@@ -131,6 +151,40 @@ const createElement = () => {
 const flushReconciliation = () =>
   new Promise((resolve) => setTimeout(resolve, 0));
 
+const installMediaDevices = (getUserMedia) => {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia },
+  });
+  return () => {
+    if (descriptor) Object.defineProperty(navigator, "mediaDevices", descriptor);
+    else delete navigator.mediaDevices;
+  };
+};
+
+const createMicStream = (id, events = []) => {
+  const track = {
+    enabled: true,
+    readyState: "live",
+    stop() {
+      events.push(`stop:${id}`);
+      this.readyState = "ended";
+    },
+  };
+  return { id, track, stream: { id, getTracks: () => [track] } };
+};
+
+const createMicElement = () => {
+  const context = document.createElement("audio-context");
+  context.id = "audio";
+  context.innerHTML = `
+    <audio-input-mic id="mic">
+      <audio-output></audio-output>
+    </audio-input-mic>`;
+  return { context, mic: context.querySelector("audio-input-mic") };
+};
+
 describe("AudioContextElement", () => {
   beforeEach(installFakeAudioContext);
   afterEach(() => {
@@ -151,6 +205,243 @@ describe("AudioContextElement", () => {
     assertEqual(context.state, "running", "running state");
     assertEqual(context.currentTime, 12.5, "native currentTime");
     assertEqual(context.sampleRate, 48_000, "native sampleRate");
+  });
+
+  it("stages a graph-wide output and applies it before the context starts", async () => {
+    const { context } = createElement();
+    const changes = [];
+    context.addEventListener("sinkchange", (event) => changes.push(event.detail));
+
+    assertEqual(context.sinkId, "", "default sink id");
+    await context.setSinkId("usb-speaker");
+    assertEqual(context.getAttribute("sink-id"), "usb-speaker", "reflected sink");
+    assertEqual(FakeAudioContext.instances.length, 0, "staging stays lazy");
+
+    await context.resume();
+
+    const native = FakeAudioContext.instances[0];
+    assert(
+      native.events.indexOf("sink:usb-speaker") < native.events.indexOf("resume"),
+      "output is selected before sources start",
+    );
+    assertEqual(context.sinkId, "usb-speaker", "committed sink id");
+    assertEqual(changes.length, 1, "native sink change is wrapped once");
+    assertEqual(changes[0].data.previousSinkId, "", "previous sink id");
+    assertEqual(changes[0].data.sinkId, "usb-speaker", "new sink id");
+    assertEqual(changes[0].data.event.type, "sinkchange", "native sink event");
+    assertEqual(changes[0].metadata.contextId, "audio", "sink context metadata");
+  });
+
+  it("rolls back a failed live output selection without choosing a fallback", async () => {
+    const { context } = createElement();
+    const failure = new DOMException("speaker missing", "NotFoundError");
+    const errors = [];
+    context.addEventListener("error", (event) => errors.push(event.detail.data));
+    await context.resume();
+    FakeAudioContext.sinkFailure = failure;
+
+    const rejected = await assertRejects(
+      context.setSinkId("missing-speaker"),
+      "NotFoundError",
+      "speaker missing",
+    );
+
+    assertEqual(rejected, failure, "original output failure");
+    assertEqual(context.sinkId, "", "reflected sink rolls back");
+    assertEqual(FakeAudioContext.instances[0].sinkId, "", "native sink remains");
+    assertEqual(errors.at(-1), failure, "context wraps output failure");
+  });
+
+  it("rejects a staged non-default output when native selection is unavailable", async () => {
+    const { context } = createElement();
+    const nativeSetSinkId = FakeAudioContext.prototype.setSinkId;
+    FakeAudioContext.prototype.setSinkId = undefined;
+
+    try {
+      await context.setSinkId("usb-speaker");
+      await assertRejects(
+        context.resume(),
+        "NotSupportedError",
+        "Audio output selection is not available",
+      );
+      assertEqual(context.state, "suspended", "failed selection does not start audio");
+    } finally {
+      FakeAudioContext.prototype.setSinkId = nativeSetSinkId;
+      await context.close();
+    }
+  });
+
+  it("rejects output selection after terminal close", async () => {
+    const { context } = createElement();
+    await context.close();
+
+    await assertRejects(
+      context.setSinkId("later"),
+      "InvalidStateError",
+      "Audio context is closed",
+    );
+    assertEqual(context.sinkId, "", "closed selection is not reflected");
+  });
+
+  it("switches a running microphone transactionally and reports the committed device", async () => {
+    const { context, mic } = createMicElement();
+    const first = createMicStream("default");
+    const second = createMicStream("usb");
+    const requests = [];
+    const streams = [first.stream, second.stream];
+    const restore = installMediaDevices(async (constraints) => {
+      requests.push(constraints);
+      return streams.shift();
+    });
+    const opens = [];
+    const changes = [];
+    mic.addEventListener("open", (event) => opens.push(event.detail.data));
+    mic.addEventListener("devicechange", (event) => changes.push(event.detail));
+
+    try {
+      await context.resume();
+      await mic.setDeviceId("usb-mic");
+
+      assertEqual(
+        JSON.stringify(requests),
+        JSON.stringify([
+          { audio: true },
+          { audio: { deviceId: { exact: "usb-mic" } } },
+        ]),
+        "default and exact device requests",
+      );
+      assertEqual(first.track.readyState, "ended", "previous track is released");
+      assertEqual(second.track.readyState, "live", "replacement track remains live");
+      assertEqual(opens.length, 2, "initial and replacement streams open");
+      assertEqual(opens[1], second.stream, "replacement open data");
+      assertEqual(changes.length, 1, "one committed device change");
+      assertEqual(changes[0].data.previousDeviceId, "", "previous device id");
+      assertEqual(changes[0].data.deviceId, "usb-mic", "committed device id");
+      assertEqual(changes[0].data.stream, second.stream, "committed stream");
+      assertEqual(changes[0].metadata.contextId, "audio", "context metadata");
+      assertEqual(mic.deviceId, "usb-mic", "reflected committed selection");
+    } finally {
+      await context.close();
+      restore();
+    }
+  });
+
+  it("preserves a running microphone when a device switch fails", async () => {
+    const { context, mic } = createMicElement();
+    const first = createMicStream("default");
+    const failure = new DOMException("device missing", "NotFoundError");
+    let requests = 0;
+    const restore = installMediaDevices(async () => {
+      requests += 1;
+      if (requests === 1) return first.stream;
+      throw failure;
+    });
+    const errors = [];
+    mic.addEventListener("error", (event) => errors.push(event.detail.data));
+
+    try {
+      await context.resume();
+      const rejected = await assertRejects(
+        mic.setDeviceId("missing"),
+        "NotFoundError",
+        "device missing",
+      );
+
+      assertEqual(rejected, failure, "original selection failure");
+      assertEqual(first.track.readyState, "live", "previous stream stays live");
+      assertEqual(mic.deviceId, "", "failed reflected selection rolls back");
+      assertEqual(errors.at(-1), failure, "microphone wraps the failure");
+    } finally {
+      await context.close();
+      restore();
+    }
+  });
+
+  it("keeps a newer microphone request reflected when an older request fails", async () => {
+    const { context, mic } = createMicElement();
+    const first = createMicStream("default");
+    const third = createMicStream("third");
+    const failure = new DOMException("second missing", "NotFoundError");
+    let requests = 0;
+    const restore = installMediaDevices(async () => {
+      requests += 1;
+      if (requests === 1) return first.stream;
+      if (requests === 2) throw failure;
+      return third.stream;
+    });
+
+    try {
+      await context.resume();
+      const older = mic.setDeviceId("missing").catch((error) => error);
+      const newer = mic.setDeviceId("third");
+
+      assertEqual(await older, failure, "older request rejects");
+      assertEqual(mic.deviceId, "third", "newer requested value is retained");
+      await newer;
+      assertEqual(first.track.readyState, "ended", "committed replacement releases old");
+      assertEqual(third.track.readyState, "live", "newest stream is committed");
+    } finally {
+      await context.close();
+      restore();
+    }
+  });
+
+  it("keeps a replacement microphone disabled while the graph is suspended", async () => {
+    const { context, mic } = createMicElement();
+    const first = createMicStream("default");
+    const replacement = createMicStream("replacement");
+    const streams = [first.stream, replacement.stream];
+    const restore = installMediaDevices(async () => streams.shift());
+
+    try {
+      await context.resume();
+      await context.suspend();
+      await mic.setDeviceId("replacement");
+
+      assertEqual(replacement.track.enabled, false, "replacement stays suspended");
+      await context.resume();
+      assertEqual(replacement.track.enabled, true, "resume enables replacement");
+    } finally {
+      await context.close();
+      restore();
+    }
+  });
+
+  it("lets terminal close cancel and release a pending microphone replacement", async () => {
+    const { context, mic } = createMicElement();
+    const first = createMicStream("default");
+    const candidate = createMicStream("candidate");
+    let resolveCandidate;
+    let requests = 0;
+    const restore = installMediaDevices(() => {
+      requests += 1;
+      if (requests === 1) return Promise.resolve(first.stream);
+      return new Promise((resolve) => {
+        resolveCandidate = resolve;
+      });
+    });
+    let changes = 0;
+    mic.addEventListener("devicechange", () => {
+      changes += 1;
+    });
+
+    try {
+      await context.resume();
+      const switching = mic.setDeviceId("candidate").catch((error) => error);
+      while (!resolveCandidate) await Promise.resolve();
+      const closing = context.close();
+      resolveCandidate(candidate.stream);
+
+      const switchError = await switching;
+      await closing;
+      assertEqual(switchError.name, "InvalidStateError", "terminal switch error");
+      assertEqual(first.track.readyState, "ended", "committed stream closes");
+      assertEqual(candidate.track.readyState, "ended", "candidate stream rolls back");
+      assertEqual(changes, 0, "cancelled replacement is not reported");
+    } finally {
+      await context.close();
+      restore();
+    }
   });
 
   it("validates the complete graph before creating native resources", async () => {

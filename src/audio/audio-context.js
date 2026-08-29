@@ -8,6 +8,12 @@ const closedError = () =>
 const unavailableError = () =>
   new DOMException("Web Audio API is not available", "NotSupportedError");
 
+const outputSelectionUnavailableError = () =>
+  new DOMException(
+    "Audio output selection is not available",
+    "NotSupportedError",
+  );
+
 const GRAPH_ATTRIBUTES = [
   "id",
   "to",
@@ -27,8 +33,13 @@ const CONFIGURATION_ATTRIBUTES = new Set([
 ]);
 
 export class AudioContextElement extends AudioEventTargetElement {
-  static audioEventTypes = ["statechange", "error"];
-  static observedAttributes = ["onstatechange", "onerror"];
+  static audioEventTypes = ["statechange", "sinkchange", "error"];
+  static observedAttributes = [
+    "sink-id",
+    "onstatechange",
+    "onsinkchange",
+    "onerror",
+  ];
 
   #nativeContext = null;
   #runtime = null;
@@ -42,11 +53,29 @@ export class AudioContextElement extends AudioEventTargetElement {
   #mutationGeneration = 0;
   #dirtyConfigurationElements = new Set();
   #dirtyConfigurationGenerations = new Map();
+  #committedSinkId = "";
+  #sinkChangePromise = Promise.resolve();
+  #reflectingSinkId = false;
+  #activeSinkRequest = null;
   #handleNativeStateChange = (event) => {
     dispatchAudioEvent(this, "statechange", event, this);
     if (this.#closed && this.#nativeContext?.state === "closed") {
       this.#removeNativeStateChangeListener();
     }
+  };
+  #handleNativeSinkChange = (event) => {
+    const previousSinkId = this.#committedSinkId;
+    const sinkId = String(this.#nativeContext?.sinkId ?? "");
+    this.#committedSinkId = sinkId;
+    if (this.#activeSinkRequest === null || this.sinkId === this.#activeSinkRequest) {
+      this.#reflectSinkId(sinkId);
+    }
+    dispatchAudioEvent(
+      this,
+      "sinkchange",
+      { previousSinkId, sinkId, event },
+      this,
+    );
   };
 
   constructor() {
@@ -74,6 +103,46 @@ export class AudioContextElement extends AudioEventTargetElement {
 
   get sampleRate() {
     return this.#nativeContext?.sampleRate ?? null;
+  }
+
+  get sinkId() {
+    return this.getAttribute("sink-id") ?? "";
+  }
+
+  set sinkId(value) {
+    this.setAttribute("sink-id", String(value ?? ""));
+  }
+
+  setSinkId(value) {
+    if (this.#closed) return Promise.reject(closedError());
+    this.sinkId = value;
+    return this.#sinkChangePromise;
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    super.attributeChangedCallback(name, oldValue, newValue);
+    if (
+      name !== "sink-id" ||
+      oldValue === newValue ||
+      this.#reflectingSinkId
+    ) {
+      return;
+    }
+    if (this.#nativeContext === null) {
+      this.#sinkChangePromise = Promise.resolve();
+      return;
+    }
+
+    const requestedSinkId = newValue ?? "";
+    const operation = this.#enqueue(() =>
+      this.#performSinkChange(requestedSinkId),
+    );
+    this.#sinkChangePromise = operation;
+    operation.catch(() => {
+      // A completed older request must not overwrite a newer requested value.
+      if (this.sinkId !== requestedSinkId) return;
+      this.#reflectSinkId(this.#committedSinkId);
+    });
   }
 
   resume() {
@@ -105,6 +174,13 @@ export class AudioContextElement extends AudioEventTargetElement {
     this.#runtime?._requestTerminalClose();
     this.#closePromise = this.#enqueue(() => this.#performClose());
     return this.#closePromise;
+  }
+
+  _setMicrophoneDevice(element, deviceId) {
+    if (this.#closed) return Promise.reject(closedError());
+    return this.#enqueue(() =>
+      this.#performMicrophoneDeviceChange(element, deviceId),
+    );
   }
 
   disconnectedCallback() {
@@ -140,8 +216,14 @@ export class AudioContextElement extends AudioEventTargetElement {
           "statechange",
           this.#handleNativeStateChange,
         );
+        this.#nativeContext.addEventListener(
+          "sinkchange",
+          this.#handleNativeSinkChange,
+        );
+        this.#committedSinkId = String(this.#nativeContext.sinkId ?? "");
         this.#runtime = new AudioGraphRuntime(this, this.#nativeContext, plan);
       }
+      await this.#applyNativeSink(this.sinkId);
       await this.#runtime.resume();
       if (initialPlan !== null) {
         this.#clearCommittedConfiguration(configurationSnapshot);
@@ -165,9 +247,55 @@ export class AudioContextElement extends AudioEventTargetElement {
   async #performClose() {
     try {
       if (this.#runtime !== null) await this.#runtime.close();
+      this.#removeNativeSinkChangeListener();
     } catch (error) {
       dispatchAudioEvent(this, "error", error, this);
       this.#removeNativeStateChangeListener();
+      this.#removeNativeSinkChangeListener();
+      throw error;
+    }
+  }
+
+  async #performSinkChange(sinkId) {
+    try {
+      if (this.#closed) throw closedError();
+      await this.#applyNativeSink(sinkId);
+    } catch (error) {
+      dispatchAudioEvent(this, "error", error, this);
+      throw error;
+    }
+  }
+
+  async #applyNativeSink(sinkId) {
+    if (this.#nativeContext === null || sinkId === this.#committedSinkId) return;
+    if (typeof this.#nativeContext.setSinkId !== "function") {
+      throw outputSelectionUnavailableError();
+    }
+
+    this.#activeSinkRequest = sinkId;
+    try {
+      await this.#nativeContext.setSinkId(sinkId);
+    } finally {
+      this.#activeSinkRequest = null;
+    }
+  }
+
+  async #performMicrophoneDeviceChange(element, deviceId) {
+    try {
+      if (this.#closed) throw closedError();
+      if (this.#runtime === null || !element._hasActiveAudioDevice()) return;
+      const candidate = await element._createDeviceCandidate(
+        this.#nativeContext,
+        deviceId,
+      );
+      if (this.#closed) {
+        candidate.rollback();
+        throw closedError();
+      }
+      candidate.setActive(this.#runtime.state === "running");
+      this.#runtime.replaceSource(element, candidate);
+    } catch (error) {
+      dispatchAudioEvent(this, "error", error, this);
       throw error;
     }
   }
@@ -315,6 +443,22 @@ export class AudioContextElement extends AudioEventTargetElement {
       "statechange",
       this.#handleNativeStateChange,
     );
+  }
+
+  #removeNativeSinkChangeListener() {
+    this.#nativeContext?.removeEventListener(
+      "sinkchange",
+      this.#handleNativeSinkChange,
+    );
+  }
+
+  #reflectSinkId(sinkId) {
+    this.#reflectingSinkId = true;
+    try {
+      this.setAttribute("sink-id", sinkId);
+    } finally {
+      this.#reflectingSinkId = false;
+    }
   }
 
   #trackPending(kind, operation) {

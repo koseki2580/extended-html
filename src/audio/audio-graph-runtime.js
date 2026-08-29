@@ -199,6 +199,56 @@ export class AudioGraphRuntime {
     return true;
   }
 
+  replaceSource(element, candidate) {
+    if (this.#state === "closed") throw closedError();
+    this.#throwIfTerminalRequested();
+    if (!this.#initialized || !this.#nodes.has(element)) {
+      throw new DOMException("Audio source is not active", "InvalidStateError");
+    }
+    if (!this.#plan.sources.some((source) => source.element === element)) {
+      throw new TypeError("Only an active audio source can be replaced");
+    }
+
+    const previousNode = this.#nodes.get(element);
+    const outgoingEdges = [...this.#appliedEdges.values()].filter(
+      (edge) => edge.fromElement === element,
+    );
+    const retainedTargets = [];
+
+    let previousResource;
+    try {
+      for (const edge of outgoingEdges) {
+        try {
+          this.#retainNativeEdge(candidate.node, edge.to);
+          retainedTargets.push(edge.to);
+        } catch (error) {
+          try {
+            candidate.node.disconnect(edge.to);
+          } catch {
+            // A failed connection may not have created a native edge.
+          }
+          throw error;
+        }
+      }
+      this.#throwIfTerminalRequested();
+      previousResource = candidate.commit();
+    } catch (error) {
+      for (const target of [...retainedTargets].reverse()) {
+        this.#releaseNativeEdge(candidate.node, target);
+      }
+      candidate.rollback();
+      throw error;
+    }
+
+    this.#nodes.set(element, candidate.node);
+    for (const edge of outgoingEdges) {
+      this.#releaseNativeEdge(previousNode, edge.to);
+      edge.from = candidate.node;
+    }
+    candidate.connected(previousResource);
+    candidate.releasePrevious(previousResource);
+  }
+
   _requestTerminalClose() {
     this.#terminalRequested = true;
   }
