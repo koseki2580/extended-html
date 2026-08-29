@@ -104,6 +104,12 @@ for (const guide of [
     await expect(audioGuide).toContainText("resume()");
     await expect(audioGuide).toContainText("suspend()");
     await expect(audioGuide).toContainText("close()");
+    await expect(audioGuide).toContainText("device-id");
+    await expect(audioGuide).toContainText("sink-id");
+    await expect(audioGuide).toContainText("setDeviceId()");
+    await expect(audioGuide).toContainText("setSinkId()");
+    await expect(audioGuide).toContainText("devicechange");
+    await expect(audioGuide).toContainText("sinkchange");
     await expect(audioGuide).toContainText("AudioWorklet");
     await expect(audioGuide).toContainText("OfflineAudioContext");
     await expect(audioGuide.getByRole("link", { name: /Audio/ })).toHaveAttribute(
@@ -174,12 +180,18 @@ test("Audio example starts and controls every source through its context", async
 
   const context = page.locator("audio-context#audio");
   const mic = context.locator(":scope > audio-input-mic#mic");
-  const filter = mic.locator(":scope > audio-biquad-filter#mix");
-  await expect(filter.locator(":scope > audio-output")).toHaveCount(1);
-  await expect(context.locator(":scope > audio-input-file#music")).toHaveAttribute(
-    "to",
-    "mix",
+  const micFilter = mic.locator(":scope > audio-biquad-filter#mic-filter");
+  await expect(micFilter).toHaveAttribute("type", "highpass");
+  await expect(micFilter.locator(":scope > audio-output#speaker")).toHaveCount(1);
+  const fileFilter = context.locator(
+    ":scope > audio-input-file#music > audio-biquad-filter#file-filter",
   );
+  await expect(fileFilter).toHaveAttribute("type", "lowpass");
+  await expect(fileFilter).toHaveAttribute("to", "speaker");
+  await expect(page.getByRole("combobox", { name: "Input microphone" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Output speaker" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Microphone filter type" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "File filter type" })).toBeVisible();
   await expect(context).not.toHaveAttribute("auto", "");
   await expect(context.locator("audio-input-file")).not.toHaveAttribute(
     "autoplay",
@@ -241,6 +253,85 @@ test("Audio example starts and controls every source through its context", async
   await expect(page.getByRole("button", { name: "Suspend audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Resume audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Close audio" })).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
+test("Audio example selects devices without automatic hot-plug fallback and edits each branch", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    globalThis.exampleDevices = [
+      { kind: "audioinput", deviceId: "usb-mic", label: "USB microphone" },
+      { kind: "audiooutput", deviceId: "desk-speaker", label: "Desk speaker" },
+    ];
+    Object.defineProperty(navigator.mediaDevices, "enumerateDevices", {
+      configurable: true,
+      value: async () => globalThis.exampleDevices.map((device) => ({ ...device })),
+    });
+    Object.defineProperty(navigator.mediaDevices, "selectAudioOutput", {
+      configurable: true,
+      value: async () => ({
+        kind: "audiooutput",
+        deviceId: "headphones",
+        label: "Headphones",
+      }),
+    });
+    const NativeContext = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+    if (typeof NativeContext.prototype.setSinkId !== "function") {
+      Object.defineProperty(NativeContext.prototype, "setSinkId", {
+        configurable: true,
+        value: async () => {},
+      });
+    }
+  });
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/`);
+  await page.evaluate(() => {
+    const context = document.querySelector("audio-context");
+    const mic = document.querySelector("audio-input-mic");
+    globalThis.exampleMicSelections = [];
+    globalThis.exampleSinkSelections = [];
+    mic.setDeviceId = async (deviceId) => {
+      globalThis.exampleMicSelections.push(deviceId);
+      mic.setAttribute("device-id", deviceId);
+    };
+    context.setSinkId = async (sinkId) => {
+      globalThis.exampleSinkSelections.push(sinkId);
+      context.setAttribute("sink-id", sinkId);
+    };
+  });
+
+  const input = page.getByRole("combobox", { name: "Input microphone" });
+  const output = page.getByRole("combobox", { name: "Output speaker" });
+  await expect(input.getByRole("option", { name: "USB microphone" })).toHaveCount(1);
+  await expect(output.getByRole("option", { name: "Desk speaker" })).toHaveCount(1);
+
+  await input.selectOption("usb-mic");
+  await expect.poll(() => page.evaluate(() => globalThis.exampleMicSelections)).toEqual([
+    "usb-mic",
+  ]);
+  await output.selectOption("__choose__");
+  await expect.poll(() => page.evaluate(() => globalThis.exampleSinkSelections)).toEqual([
+    "headphones",
+  ]);
+
+  await page.evaluate(() => {
+    globalThis.exampleDevices = [
+      { kind: "audioinput", deviceId: "built-in", label: "Built-in microphone" },
+      { kind: "audiooutput", deviceId: "desk-speaker", label: "Desk speaker" },
+    ];
+    navigator.mediaDevices.dispatchEvent(new Event("devicechange"));
+  });
+  await expect(input).toHaveValue("usb-mic");
+  await expect(input.getByRole("option", { name: "Microphone unavailable" })).toHaveCount(1);
+  expect(await page.evaluate(() => globalThis.exampleMicSelections)).toEqual(["usb-mic"]);
+
+  await page.getByRole("combobox", { name: "Microphone filter type" }).selectOption(
+    "lowpass",
+  );
+  await page.getByLabel("File cutoff").fill("2500");
+  await expect(page.locator("#mic-filter")).toHaveAttribute("type", "lowpass");
+  await expect(page.locator("#file-filter")).toHaveAttribute("frequency", "2500");
   expect(errors).toEqual([]);
 });
 

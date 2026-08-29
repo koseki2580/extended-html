@@ -261,7 +261,8 @@ h2 {
   font-weight: 600;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   min-height: 2.75rem;
   padding: 0.65rem 0.75rem;
@@ -269,6 +270,24 @@ h2 {
   border-radius: 0.65rem;
   color: var(--text);
   background: #091323;
+}
+
+.field output {
+  color: #86efac;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.field select:disabled,
+.field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.audio-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.25rem;
 }
 
 .field-help {
@@ -425,6 +444,10 @@ h2 {
   }
 
   .field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audio-control-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

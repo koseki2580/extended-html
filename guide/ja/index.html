@@ -231,13 +231,15 @@ socket.close();</code></pre>
             直下のsource siblingはDOM順に開始し、深い子要素は直列接続、processor siblingはfan-outになります。
             <code>to</code>は別のsource tree内にネスト済みのprocessorまたはoutputへedgeを追加する場合だけ使います。
           </p>
-          <pre class="code-block"><code>&lt;audio-context id="audio"&gt;
-  &lt;audio-input-mic id="mic"&gt;
-    &lt;audio-biquad-filter id="mix" frequency="1200"&gt;
-      &lt;audio-output&gt;&lt;/audio-output&gt;
+          <pre class="code-block"><code>&lt;audio-context id="audio" sink-id=""&gt;
+  &lt;audio-input-mic id="mic" device-id=""&gt;
+    &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
+      &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
     &lt;/audio-biquad-filter&gt;
   &lt;/audio-input-mic&gt;
-  &lt;audio-input-file id="music" src="./tone.wav" to="mix" loop&gt;
+  &lt;audio-input-file id="music" src="./tone.wav" loop&gt;
+    &lt;audio-biquad-filter id="file-filter" type="lowpass"
+      frequency="6000" to="speaker"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
           <p>
@@ -252,14 +254,31 @@ start.addEventListener("click", () =&gt; audio.resume());
 suspend.addEventListener("click", () =&gt; audio.suspend());
 closeButton.addEventListener("click", () =&gt; audio.close());</code></pre>
           <p>
+            microphoneは<code>&lt;audio-input-mic&gt;</code>の<code>device-id</code>、
+            <code>deviceId</code>、または<code>setDeviceId()</code>で選択します。
+            graph全体で使う1つの物理speakerは<code>&lt;audio-context&gt;</code>の
+            <code>sink-id</code>、<code>sinkId</code>、または<code>setSinkId()</code>で選択します。
+            実行中はreplacementを接続してから以前のdeviceを解放します。失敗時は以前のdeviceを維持し、
+            自動fallbackは行いません。
+          </p>
+          <pre class="code-block"><code>inputSelect.addEventListener("change", () =&gt;
+  mic.setDeviceId(inputSelect.value));
+
+outputButton.addEventListener("click", async () =&gt; {
+  const device = await navigator.mediaDevices.selectAudioOutput();
+  await audio.setSinkId(device.deviceId);
+});</code></pre>
+          <p>
             context、microphone、fileのeventは同じenvelopeを使います。
             payloadは<code>event.detail.data</code>、graph上の識別情報は
-            <code>event.detail.metadata</code>から読み取ります。
+            <code>event.detail.metadata</code>から読み取ります。実行中の選択に成功すると、
+            microphoneは<code>devicechange</code>、contextは<code>sinkchange</code>を通知します。
           </p>
           <p>
             gain、analyser、oscillator、delayとfeedback、channel splitter/merger、compressor、convolver、
             panner、buffer source、media-stream destination、AudioParam automation markup、
-            <code>AudioWorklet</code>、<code>OfflineAudioContext</code>、microphone constraintsは今後の対象です。
+            <code>AudioWorklet</code>、<code>OfflineAudioContext</code>、exact device選択以外の
+            microphone constraintsは今後の対象です。
           </p>
           <a class="example-link" href="../../examples/audio-context/">Audioサンプル</a>
         </section>

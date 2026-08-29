@@ -9,6 +9,26 @@ const suspendButton = document.querySelector("#suspend");
 const resumeButton = document.querySelector("#resume");
 const closeButton = document.querySelector("#close");
 const eventLog = document.querySelector("[data-testid='event-log']");
+const inputDevice = document.querySelector("#input-device");
+const outputDevice = document.querySelector("#output-device");
+const inputDeviceStatus = document.querySelector("#input-device-status");
+const outputDeviceStatus = document.querySelector("#output-device-status");
+const micFilter = document.querySelector("#mic-filter");
+const fileFilter = document.querySelector("#file-filter");
+const micFilterType = document.querySelector("#mic-filter-type");
+const fileFilterType = document.querySelector("#file-filter-type");
+const micFilterFrequency = document.querySelector("#mic-filter-frequency");
+const fileFilterFrequency = document.querySelector("#file-filter-frequency");
+const micFilterValue = document.querySelector("#mic-filter-value");
+const fileFilterValue = document.querySelector("#file-filter-value");
+
+const CHOOSE_OUTPUT = "__choose__";
+const mediaDevices = navigator.mediaDevices;
+const NativeAudioContext = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+const canEnumerateDevices = typeof mediaDevices?.enumerateDevices === "function";
+const canSelectOutput =
+  typeof mediaDevices?.selectAudioOutput === "function" &&
+  typeof NativeAudioContext?.prototype?.setSinkId === "function";
 
 let started = false;
 let terminal = false;
@@ -67,6 +87,12 @@ const describeData = (data) => {
     };
   }
   if (data instanceof Event) return { type: data.type };
+  if (data && typeof data === "object" && "stream" in data) {
+    return { ...data, stream: describeData(data.stream) };
+  }
+  if (data && typeof data === "object" && "event" in data) {
+    return { ...data, event: describeData(data.event) };
+  }
   return data ?? null;
 };
 
@@ -96,6 +122,8 @@ const updateControls = () => {
   resumeButton.disabled =
     busy || terminal || !started || context.state !== "suspended";
   closeButton.disabled = busy || terminal;
+  inputDevice.disabled = terminal || !canEnumerateDevices;
+  outputDevice.disabled = terminal || !canSelectOutput;
 };
 
 const runAction = async (action, { recoveryFocus = null } = {}) => {
@@ -120,7 +148,95 @@ const runAction = async (action, { recoveryFocus = null } = {}) => {
   }
 };
 
-for (const type of ["statechange", "error"]) {
+const replaceDeviceOptions = (
+  select,
+  devices,
+  { kind, selectedId, defaultLabel, fallbackLabel, includeChooser = false },
+) => {
+  const options = [new Option(defaultLabel, "")];
+  const matching = devices.filter((device) => device.kind === kind);
+  matching.forEach((device, index) => {
+    options.push(
+      new Option(device.label || `${fallbackLabel} ${index + 1}`, device.deviceId),
+    );
+  });
+  if (selectedId && !matching.some((device) => device.deviceId === selectedId)) {
+    options.push(new Option(`${fallbackLabel} unavailable`, selectedId));
+  }
+  if (includeChooser) {
+    options.push(new Option("Choose another speaker…", CHOOSE_OUTPUT));
+  }
+  select.replaceChildren(...options);
+  select.value = selectedId;
+};
+
+const refreshDevices = async () => {
+  if (!canEnumerateDevices) {
+    inputDevice.disabled = true;
+    outputDevice.disabled = true;
+    inputDeviceStatus.textContent = "Device enumeration is not supported here.";
+    outputDeviceStatus.textContent = "Output selection is not supported here.";
+    return;
+  }
+
+  try {
+    const devices = await mediaDevices.enumerateDevices();
+    replaceDeviceOptions(inputDevice, devices, {
+      kind: "audioinput",
+      selectedId: mic.deviceId,
+      defaultLabel: "Default microphone",
+      fallbackLabel: "Microphone",
+    });
+    inputDevice.disabled = terminal;
+    inputDeviceStatus.textContent =
+      "Labels may appear after microphone permission is granted.";
+
+    if (canSelectOutput) {
+      replaceDeviceOptions(outputDevice, devices, {
+        kind: "audiooutput",
+        selectedId: context.sinkId,
+        defaultLabel: "Default speaker",
+        fallbackLabel: "Speaker",
+        includeChooser: true,
+      });
+      outputDevice.disabled = terminal;
+      outputDeviceStatus.textContent = "Choose another speaker opens browser permission UI.";
+    } else {
+      outputDevice.disabled = true;
+      outputDeviceStatus.textContent =
+        "This browser does not support explicit output selection.";
+    }
+  } catch (error) {
+    inputDevice.disabled = true;
+    outputDevice.disabled = true;
+    inputDeviceStatus.textContent = `${error.name}: ${error.message}`;
+    outputDeviceStatus.textContent = "Device lists could not be refreshed.";
+  }
+};
+
+const runDeviceSelection = async (control, operation) => {
+  control.disabled = true;
+  errorMessage.textContent = "";
+  try {
+    await operation();
+  } catch (error) {
+    errorMessage.textContent = `${error.name}: ${error.message}`;
+  } finally {
+    await refreshDevices();
+  }
+};
+
+const bindFilterControls = (filter, typeControl, frequencyControl, value) => {
+  typeControl.addEventListener("change", () => {
+    filter.type = typeControl.value;
+  });
+  frequencyControl.addEventListener("input", () => {
+    filter.setAttribute("frequency", frequencyControl.value);
+    value.value = `${frequencyControl.value} Hz`;
+  });
+};
+
+for (const type of ["statechange", "sinkchange", "error"]) {
   context.addEventListener(type, (event) => {
     logEvent(event);
     if (type === "statechange") {
@@ -132,7 +248,7 @@ for (const type of ["statechange", "error"]) {
     }
   });
 }
-for (const type of ["open", "close", "error"]) {
+for (const type of ["open", "close", "devicechange", "error"]) {
   mic.addEventListener(type, logEvent);
 }
 for (const type of ["play", "playing", "pause", "ended", "error"]) {
@@ -141,7 +257,13 @@ for (const type of ["play", "playing", "pause", "ended", "error"]) {
 
 startButton.addEventListener("click", () => {
   started = true;
-  runAction(() => context.resume(), { recoveryFocus: resumeButton });
+  runAction(
+    async () => {
+      await context.resume();
+      await refreshDevices();
+    },
+    { recoveryFocus: resumeButton },
+  );
 });
 suspendButton.addEventListener("click", () => runAction(() => context.suspend()));
 resumeButton.addEventListener("click", () =>
@@ -159,8 +281,38 @@ closeButton.addEventListener("click", () =>
   }),
 );
 
+inputDevice.addEventListener("change", () => {
+  runDeviceSelection(inputDevice, () => mic.setDeviceId(inputDevice.value));
+});
+
+outputDevice.addEventListener("change", () => {
+  runDeviceSelection(outputDevice, async () => {
+    let sinkId = outputDevice.value;
+    if (sinkId === CHOOSE_OUTPUT) {
+      const selected = await mediaDevices.selectAudioOutput();
+      sinkId = selected.deviceId;
+    }
+    await context.setSinkId(sinkId);
+  });
+});
+
+bindFilterControls(
+  micFilter,
+  micFilterType,
+  micFilterFrequency,
+  micFilterValue,
+);
+bindFilterControls(
+  fileFilter,
+  fileFilterType,
+  fileFilterFrequency,
+  fileFilterValue,
+);
+mediaDevices?.addEventListener?.("devicechange", refreshDevices);
+
 toneUrl = createToneUrl();
 music.src = toneUrl;
 window.addEventListener("beforeunload", releaseToneUrl, { once: true });
 renderState();
 updateControls();
+refreshDevices();

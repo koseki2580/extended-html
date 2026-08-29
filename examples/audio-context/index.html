@@ -56,6 +56,69 @@
             </div>
           </section>
 
+          <section class="panel" aria-labelledby="routing-heading">
+            <h2 id="routing-heading">Devices and branch filters</h2>
+            <p class="field-help">
+              Device lists refresh when hardware changes, but the graph never
+              switches to a fallback device automatically.
+            </p>
+            <div class="audio-control-grid">
+              <div class="field">
+                <label for="input-device">Input microphone</label>
+                <select id="input-device">
+                  <option value="">Default microphone</option>
+                </select>
+                <p class="field-help" id="input-device-status" aria-live="polite"></p>
+              </div>
+              <div class="field">
+                <label for="output-device">Output speaker</label>
+                <select id="output-device">
+                  <option value="">Default speaker</option>
+                  <option value="__choose__">Choose another speaker…</option>
+                </select>
+                <p class="field-help" id="output-device-status" aria-live="polite"></p>
+              </div>
+              <div class="field">
+                <label for="mic-filter-type">Microphone filter type</label>
+                <select id="mic-filter-type">
+                  <option value="highpass">High-pass</option>
+                  <option value="lowpass">Low-pass</option>
+                </select>
+                <label for="mic-filter-frequency">
+                  Microphone cutoff
+                  <output id="mic-filter-value" for="mic-filter-frequency">120 Hz</output>
+                </label>
+                <input
+                  id="mic-filter-frequency"
+                  type="range"
+                  min="20"
+                  max="12000"
+                  step="10"
+                  value="120"
+                />
+              </div>
+              <div class="field">
+                <label for="file-filter-type">File filter type</label>
+                <select id="file-filter-type">
+                  <option value="lowpass">Low-pass</option>
+                  <option value="highpass">High-pass</option>
+                </select>
+                <label for="file-filter-frequency">
+                  File cutoff
+                  <output id="file-filter-value" for="file-filter-frequency">6000 Hz</output>
+                </label>
+                <input
+                  id="file-filter-frequency"
+                  type="range"
+                  min="20"
+                  max="12000"
+                  step="10"
+                  value="6000"
+                />
+              </div>
+            </div>
+          </section>
+
           <section class="panel" aria-labelledby="events-heading">
             <h2 id="events-heading">Wrapped event log</h2>
             <p class="field-help">
@@ -66,13 +129,15 @@
 
           <section class="panel" aria-labelledby="markup-heading">
             <h2 id="markup-heading">Graph markup</h2>
-            <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+            <pre class="code-sample"><code>&lt;audio-context id="audio" sink-id=""&gt;
   &lt;audio-input-mic id="mic"&gt;
-    &lt;audio-biquad-filter id="mix" frequency="1200"&gt;
-      &lt;audio-output&gt;&lt;/audio-output&gt;
+    &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
+      &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
     &lt;/audio-biquad-filter&gt;
   &lt;/audio-input-mic&gt;
-  &lt;audio-input-file id="music" to="mix" loop&gt;
+  &lt;audio-input-file id="music" loop&gt;
+    &lt;audio-biquad-filter id="file-filter" type="lowpass"
+      frequency="6000" to="speaker"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
           </section>
@@ -80,13 +145,20 @@
       </main>
     </div>
 
-    <audio-context id="audio" hidden>
+    <audio-context id="audio" sink-id="" hidden>
       <audio-input-mic id="mic">
-        <audio-biquad-filter id="mix" frequency="1200">
-          <audio-output></audio-output>
+        <audio-biquad-filter id="mic-filter" type="highpass" frequency="120">
+          <audio-output id="speaker"></audio-output>
         </audio-biquad-filter>
       </audio-input-mic>
-      <audio-input-file id="music" to="mix" loop></audio-input-file>
+      <audio-input-file id="music" loop>
+        <audio-biquad-filter
+          id="file-filter"
+          type="lowpass"
+          frequency="6000"
+          to="speaker"
+        ></audio-biquad-filter>
+      </audio-input-file>
     </audio-context>
     <script type="module" src="../../src/audio/index.js"></script>
     <script type="module" src="../assets/site.js"></script>

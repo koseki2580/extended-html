@@ -239,13 +239,15 @@ socket.close();</code></pre>
             and processor siblings fan out. Use <code>to</code> only to add an edge
             to a processor or output nested in another source tree.
           </p>
-          <pre class="code-block"><code>&lt;audio-context id="audio"&gt;
-  &lt;audio-input-mic id="mic"&gt;
-    &lt;audio-biquad-filter id="mix" frequency="1200"&gt;
-      &lt;audio-output&gt;&lt;/audio-output&gt;
+          <pre class="code-block"><code>&lt;audio-context id="audio" sink-id=""&gt;
+  &lt;audio-input-mic id="mic" device-id=""&gt;
+    &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
+      &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
     &lt;/audio-biquad-filter&gt;
   &lt;/audio-input-mic&gt;
-  &lt;audio-input-file id="music" src="./tone.wav" to="mix" loop&gt;
+  &lt;audio-input-file id="music" src="./tone.wav" loop&gt;
+    &lt;audio-biquad-filter id="file-filter" type="lowpass"
+      frequency="6000" to="speaker"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
           <p>
@@ -262,15 +264,34 @@ start.addEventListener("click", () =&gt; audio.resume());
 suspend.addEventListener("click", () =&gt; audio.suspend());
 closeButton.addEventListener("click", () =&gt; audio.close());</code></pre>
           <p>
+            Select one microphone on <code>&lt;audio-input-mic&gt;</code> with
+            <code>device-id</code>, <code>deviceId</code>, or
+            <code>setDeviceId()</code>. Select one physical speaker for the whole
+            graph on <code>&lt;audio-context&gt;</code> with <code>sink-id</code>,
+            <code>sinkId</code>, or <code>setSinkId()</code>. A live change connects
+            the replacement before releasing the previous device; failure keeps the
+            previous device and never chooses an automatic fallback.
+          </p>
+          <pre class="code-block"><code>inputSelect.addEventListener("change", () =&gt;
+  mic.setDeviceId(inputSelect.value));
+
+outputButton.addEventListener("click", async () =&gt; {
+  const device = await navigator.mediaDevices.selectAudioOutput();
+  await audio.setSinkId(device.deviceId);
+});</code></pre>
+          <p>
             Context, microphone, and file events share the same envelope. Read the
             payload from <code>event.detail.data</code> and graph identity from
-            <code>event.detail.metadata</code>.
+            <code>event.detail.metadata</code>. Successful live selections emit
+            <code>devicechange</code> on the microphone and <code>sinkchange</code>
+            on the context.
           </p>
           <p>
             Gain, analyser, oscillator, delay and feedback, channel splitter and
             merger, compressor, convolver, panner, buffer source, media-stream
             destination, AudioParam automation markup, <code>AudioWorklet</code>,
-            <code>OfflineAudioContext</code>, and microphone constraints are deferred.
+            <code>OfflineAudioContext</code>, and microphone constraints other than
+            exact device selection are deferred.
           </p>
           <a class="example-link" href="../../examples/audio-context/">Audio example</a>
         </section>

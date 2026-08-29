@@ -162,6 +162,30 @@ Before native creation, `state` is `"suspended"`, `currentTime` is `0`, and
 reconciliation failures dispatch `error`. The component does not synthesize a
 successful state change when the native API did not emit one.
 
+### Output device
+
+`sink-id` selects one physical output for the complete graph. It reflects to
+the `sinkId` property; an empty value selects the browser default. The
+equivalent promise-returning API is `setSinkId(value)`.
+
+Before the first `resume()`, selection is staged without creating a native
+context. A non-empty staged value is applied before any source starts. After
+native creation, changes are serialized with lifecycle and graph operations and
+delegate to native `AudioContext.setSinkId()`. A successful native
+`sinkchange` is wrapped with this data:
+
+```js
+context.addEventListener("sinkchange", (event) => {
+  const { previousSinkId, sinkId, event: nativeEvent } = event.detail.data;
+});
+```
+
+If output selection is unavailable, a non-default selection rejects with
+`NotSupportedError`. If selection fails, the previous output and reflected
+committed value remain active. The component never chooses a fallback output.
+Every `<audio-output>` in the graph shares this one context output; selecting a
+different physical output per graph sink is not supported.
+
 ## Sources
 
 ### `<audio-input-file>`
@@ -194,11 +218,34 @@ native media event.
 
 ### `<audio-input-mic>`
 
-Context `resume()` requests `navigator.mediaDevices.getUserMedia({ audio: true })`
-and connects the resulting `MediaStreamAudioSourceNode` before dispatching
-`open`. Suspending disables all owned tracks; resuming re-enables live tracks.
-If every previous track has ended, the next resume acquires a new stream.
-Terminal close stops all tracks, disconnects the source, and dispatches `close`.
+`device-id` selects a microphone and reflects to the `deviceId` property. An
+empty value selects the browser default. `setDeviceId(value)` provides the same
+selection as a promise-returning API. Before the first context `resume()`, the
+value is staged without requesting permission. Initial activation requests
+`navigator.mediaDevices.getUserMedia({ audio: true })` for the default or
+`{ audio: { deviceId: { exact: value } } }` for an explicit ID.
+
+The resulting `MediaStreamAudioSourceNode` is connected before `open` is
+dispatched. Suspending disables all owned tracks; resuming re-enables live
+tracks. If every previous track has ended, the next resume acquires a new
+stream. Terminal close stops all tracks, disconnects the source, and dispatches
+`close`.
+
+Changing the device while the graph is active is transactional. The replacement
+stream and source node are acquired and connected before the previous stream is
+released. Success dispatches `open` for the replacement stream followed by:
+
+```js
+mic.addEventListener("devicechange", (event) => {
+  const { previousDeviceId, deviceId, stream } = event.detail.data;
+});
+```
+
+Failure rejects `setDeviceId()`, dispatches `error`, and preserves the previous
+stream and committed selection. Attribute and property changes use the same
+operation asynchronously. Rapid requests run in order, while an older failure
+does not overwrite a newer requested value. No automatic microphone fallback
+is performed.
 
 The mic element deliberately has no public `open()` or `close()` methods;
 `<audio-context>` owns source lifecycle. Acquisition and native-node creation
@@ -251,7 +298,9 @@ element.addEventListener("error", (event) => {
 
 `metadata` contains `contextId`, `nodeId`, and `nodeName`; missing IDs are
 represented by `null`. Context `statechange` carries the native event as data,
+context `sinkchange` carries the previous/current sink IDs and native event,
 context `error` carries the caught error, mic `open` and `close` carry the
+stream, mic `devicechange` carries the previous/current device IDs and new
 stream, mic `error` carries the caught error, and file events carry their native
 media event.
 
@@ -274,11 +323,12 @@ preferable under a strict Content Security Policy.
 ## Live graph reconciliation
 
 After initial activation, the context observes graph child changes and changes
-to `id`, `to`, and Biquad configuration attributes. Same-turn mutations are
-batched. A valid candidate graph is applied transactionally: replacement edges
-are added before obsolete edges are removed, newly added sources start in the
-candidate DOM order when the context is running, unchanged sources keep
-running, and removed sources are terminally closed.
+to `id`, `to`, device selection, and Biquad configuration attributes. Same-turn
+structural mutations are batched. A valid candidate graph is applied
+transactionally: replacement edges are added before obsolete edges are removed,
+newly added sources start in the candidate DOM order when the context is
+running, unchanged sources keep running, and removed sources are terminally
+closed.
 
 An invalid or stale candidate is not committed. Candidate-only resources and
 configuration changes are rolled back and the last valid graph keeps running.
@@ -294,8 +344,14 @@ mutations can recover without recreating the existing graph. Imperative
 - Native media playback, permission, context, node creation, connection, and
   cleanup errors reject the responsible lifecycle call where applicable and
   are also reported through the relevant `error` event.
-- The implementation requests only `{ audio: true }`; markup cannot provide
-  device constraints or select a microphone.
+- Markup can select a microphone only by exact `device-id`; arbitrary media
+  constraints are not accepted.
+- Output selection requires native `AudioContext.setSinkId()`. Applications may
+  use `navigator.mediaDevices.selectAudioOutput()` from a user gesture to obtain
+  an authorized output ID, but the custom element does not open permission UI.
+- Device disappearance and selection failure never trigger an implementation-
+  chosen fallback. User-agent or operating-system routing remains outside this
+  component's control.
 - Audio starts only through explicit JavaScript, so markup alone cannot bypass
   browser user-activation, permission, autoplay, or media-origin policies.
 
@@ -305,5 +361,5 @@ The current contract intentionally does not include gain, analyser, oscillator,
 delay or feedback helpers, channel splitter/merger or indexed ports, compressor,
 convolver, panner, buffer source, media-stream destination, declarative
 `AudioParam` automation markup, `AudioWorklet`, `OfflineAudioContext`, or
-microphone device constraints. Unknown `audio-*` tags remain invalid until an
-explicit contract is added.
+microphone constraints other than exact `deviceId`. Unknown `audio-*` tags
+remain invalid until an explicit contract is added.
