@@ -48,3 +48,10 @@
 - **Rule:** When a parent custom element owns a declarative graph, its lifecycle method must coordinate every declared child resource unless explicitly excluded.
 - **Why:** Requiring per-child startup undermines the HTML hierarchy and makes orchestration leak into consumer JavaScript.
 - **Apply-when:** Designing lifecycle APIs for nested custom elements or resource graphs.
+
+## Replacement resources inherit the owner's lifecycle state
+
+- **What happened:** A microphone selected while its graph was suspended initially produced enabled replacement tracks.
+- **Rule:** Prepare replacements in the owner's current running or suspended state before committing them.
+- **Why:** Atomic resource replacement must preserve lifecycle state as well as graph connectivity.
+- **Apply-when:** Swapping streams, transports, workers, or other live child resources.
