@@ -65,6 +65,7 @@ for (const guide of [
     translation: "日本語で読む",
     translationPath: "../ja/",
     examples: "Interactive examples",
+    recipeLabel: "copyable recipes",
   },
   {
     language: "Japanese",
@@ -74,6 +75,7 @@ for (const guide of [
     translation: "Read in English",
     translationPath: "../en/",
     examples: "動作するサンプル",
+    recipeLabel: "コピーできるレシピ",
   },
 ]) {
   test(`${guide.language} guide exposes the complete localized user journey`, async ({
@@ -115,6 +117,9 @@ for (const guide of [
     await expect(audioGuide).toContainText("dataavailable");
     await expect(audioGuide).toContainText("requestData()");
     await expect(audioGuide).toContainText("timecode");
+    await expect(audioGuide).toContainText(guide.recipeLabel);
+    await expect(audioGuide).toContainText("MediaStream");
+    await expect(audioGuide).toContainText("getAudioTracks()");
     await expect(audioGuide).toContainText("AudioWorklet");
     await expect(audioGuide).toContainText("OfflineAudioContext");
     await expect(audioGuide.getByRole("link", { name: /Audio/ })).toHaveAttribute(
@@ -159,9 +164,9 @@ test("examples overview and sidebar navigate to the Audio example", async ({ pag
 
   await expect(page).toHaveURL(/\/examples\/audio-context\/$/);
   await expect(page.getByRole("heading", { name: "Build one audio graph." })).toBeVisible();
-  await expect(page.getByRole("note")).toContainText(
-    "Use headphones or keep speaker volume low",
-  );
+  await expect(
+    page.getByRole("note").filter({ hasText: "Listening safety" }),
+  ).toContainText("Use headphones or keep speaker volume low");
   const skipLink = page.getByRole("link", { name: "Skip to audio example" });
   await expect(skipLink).toHaveAttribute("href", "#main-content");
   await page.keyboard.press("Tab");
@@ -174,6 +179,44 @@ test("examples overview and sidebar navigate to the Audio example", async ({ pag
     "aria-current",
     "page",
   );
+  expect(errors).toEqual([]);
+});
+
+test("Audio recipe library covers graph, recording, and MediaStream patterns", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/`);
+
+  const recipes = page.locator("[data-recipe]");
+  await expect(recipes).toHaveCount(8);
+  expect(await recipes.evaluateAll((nodes) => nodes.map((node) => node.dataset.recipe))).toEqual([
+    "mic-monitor",
+    "file-recording",
+    "monitor-record",
+    "mixed-recording",
+    "declarative-events",
+    "collect-download",
+    "media-stream-access",
+    "media-stream-webrtc",
+  ]);
+
+  const recipeText = await recipes.allInnerTexts();
+  expect(recipeText.join("\n")).toContain('<audio-input-mic id="mic">');
+  expect(recipeText.join("\n")).toContain('to="speaker recording-output"');
+  expect(recipeText.join("\n")).toContain('ondataavailable="HandleChunk(event)"');
+  expect(recipeText.join("\n")).toContain("event.detail.data");
+  expect(recipeText.join("\n")).toContain("recorder.requestData()");
+  expect(recipeText.join("\n")).toContain("new Blob(chunks");
+  expect(recipeText.join("\n")).toContain("streamOutput.stream");
+  expect(recipeText.join("\n")).toContain("stream.getAudioTracks()");
+  expect(recipeText.join("\n")).toContain("peerConnection.addTrack(track, stream)");
+
+  for (const recipe of recipeText.filter((text) =>
+    text.includes("<audio-stream-output"),
+  )) {
+    expect(recipe).toContain("<media-recorder");
+  }
   expect(errors).toEqual([]);
 });
 

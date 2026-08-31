@@ -297,6 +297,13 @@ outputButton.addEventListener("click", async () =&gt; {
             microphoneは<code>devicechange</code>、contextは<code>sinkchange</code>を通知します。
           </p>
           <p>
+            Audioサンプルにはmonitoring、recording、mix、chunk download、native
+            <code>MediaStream</code>連携のコピーできるレシピがあります。
+            <code>resume()</code>後に<code>audio-stream-output.stream</code>を読み取り、
+            <code>getAudioTracks()</code>でtrackを確認したり、WebRTCなどの標準browser APIへ
+            渡したりできます。
+          </p>
+          <p>
             gain、analyser、oscillator、delayとfeedback、channel splitter/merger、compressor、convolver、
             panner、buffer source、video recording、外部streamのrecorderへの代入、AudioParam automation markup、
             <code>AudioWorklet</code>、<code>OfflineAudioContext</code>、exact device選択以外の

@@ -138,7 +138,7 @@
           </section>
 
           <section class="panel" aria-labelledby="markup-heading">
-            <h2 id="markup-heading">Graph markup</h2>
+            <h2 id="markup-heading">Running example markup</h2>
             <pre class="code-sample"><code>&lt;audio-context id="audio" sink-id=""&gt;
   &lt;audio-input-mic id="mic"&gt;
     &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
@@ -153,6 +153,181 @@
       frequency="6000" to="speaker recording-output"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
+          </section>
+
+          <section class="panel recipe-library" aria-labelledby="recipes-heading">
+            <p class="eyebrow">Copyable patterns</p>
+            <h2 id="recipes-heading">Audio recipe library</h2>
+            <p class="hero-copy">
+              Start with the smallest graph that fits your use case. Each
+              snippet follows the same ownership rule: the context starts,
+              suspends, and closes every nested source and recorder.
+            </p>
+            <p class="audio-note" role="note">
+              <strong>MediaStream timing:</strong>
+              <code>audio-stream-output.stream</code> becomes available after
+              <code>audio-context.resume()</code> builds the graph.
+            </p>
+
+            <div class="recipe-grid">
+              <article class="recipe-card" data-recipe="mic-monitor">
+                <p class="card-index">01 · INPUT TO OUTPUT</p>
+                <h3>Monitor one microphone</h3>
+                <p>Route a microphone directly to the selected context speaker.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic id="mic"&gt;
+    &lt;audio-output&gt;&lt;/audio-output&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;
+
+&lt;script&gt;
+  start.onclick = () =&gt; audio.resume();
+&lt;/script&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="file-recording">
+                <p class="card-index">02 · FILE TO RECORDER</p>
+                <h3>Record a file without playback</h3>
+                <p>Connect a file only to a MediaStream-backed recorder.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-file src="./music.mp3"&gt;
+    &lt;audio-stream-output&gt;
+      &lt;media-recorder timeslice="1000"&gt;&lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-file&gt;
+&lt;/audio-context&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="monitor-record">
+                <p class="card-index">03 · FAN-OUT</p>
+                <h3>Play and record one source</h3>
+                <p>Sibling sinks receive the filtered microphone at the same time.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic&gt;
+    &lt;audio-biquad-filter type="highpass" frequency="120"&gt;
+      &lt;audio-output&gt;&lt;/audio-output&gt;
+      &lt;audio-stream-output&gt;
+        &lt;media-recorder&gt;&lt;/media-recorder&gt;
+      &lt;/audio-stream-output&gt;
+    &lt;/audio-biquad-filter&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="mixed-recording">
+                <p class="card-index">04 · CROSS-TREE ROUTING</p>
+                <h3>Mix microphone and file</h3>
+                <p>Use <code>to</code> when another source joins existing sinks.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic id="mic"&gt;
+    &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
+    &lt;audio-stream-output id="recording-output"&gt;
+      &lt;media-recorder&gt;&lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-mic&gt;
+  &lt;audio-input-file src="./music.mp3"&gt;
+    &lt;audio-biquad-filter type="lowpass" frequency="6000"
+      to="speaker recording-output"&gt;&lt;/audio-biquad-filter&gt;
+  &lt;/audio-input-file&gt;
+&lt;/audio-context&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="declarative-events">
+                <p class="card-index">05 · DECLARATIVE EVENTS</p>
+                <h3>Handle recorder chunks in HTML</h3>
+                <p>Read each native Blob from the shared custom-event envelope.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic&gt;
+    &lt;audio-stream-output&gt;
+      &lt;media-recorder
+        ondataavailable="HandleChunk(event)"&gt;
+      &lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;
+
+&lt;script&gt;
+  function HandleChunk(event) {
+    const blob = event.detail.data;
+    console.log(blob, event.detail.metadata.timecode);
+  }
+&lt;/script&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="collect-download">
+                <p class="card-index">06 · DOWNLOAD</p>
+                <h3>Collect and download recording</h3>
+                <p>Request a chunk without stopping, then build a Blob after close.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-file src="./music.mp3"&gt;
+    &lt;audio-stream-output&gt;
+      &lt;media-recorder id="recorder"&gt;&lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-file&gt;
+&lt;/audio-context&gt;
+
+&lt;script&gt;
+  const chunks = [];
+  recorder.addEventListener("dataavailable", (event) =&gt; {
+    chunks.push(event.detail.data);
+  });
+
+  snapshot.onclick = () =&gt; recorder.requestData();
+  finish.onclick = async () =&gt; {
+    await audio.close();
+    const recording = new Blob(chunks, { type: chunks[0]?.type });
+    download.href = URL.createObjectURL(recording);
+  };
+&lt;/script&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="media-stream-access">
+                <p class="card-index">07 · NATIVE MEDIASTREAM</p>
+                <h3>Inspect generated audio tracks</h3>
+                <p>The stream is a standard browser <code>MediaStream</code>.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic&gt;
+    &lt;audio-stream-output id="streamOutput"&gt;
+      &lt;media-recorder&gt;&lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;
+
+&lt;script&gt;
+  start.onclick = async () =&gt; {
+    await audio.resume();
+    const stream = streamOutput.stream;
+    const [track] = stream.getAudioTracks();
+    console.log(track.label, track.readyState);
+  };
+&lt;/script&gt;</code></pre>
+              </article>
+
+              <article class="recipe-card" data-recipe="media-stream-webrtc">
+                <p class="card-index">08 · STANDARD API HANDOFF</p>
+                <h3>Send the graph to WebRTC</h3>
+                <p>Pass native tracks onward; signaling remains application-owned.</p>
+                <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic&gt;
+    &lt;audio-stream-output id="streamOutput"&gt;
+      &lt;media-recorder&gt;&lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;
+
+&lt;script&gt;
+  const peerConnection = new RTCPeerConnection();
+
+  call.onclick = async () =&gt; {
+    await audio.resume();
+    const stream = streamOutput.stream;
+    for (const track of stream.getAudioTracks()) {
+      peerConnection.addTrack(track, stream);
+    }
+  };
+&lt;/script&gt;</code></pre>
+              </article>
+            </div>
           </section>
         </div>
       </main>

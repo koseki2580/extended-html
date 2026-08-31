@@ -404,6 +404,34 @@ h2 {
   background: #091323;
 }
 
+.recipe-library {
+  grid-column: 1 / -1;
+}
+
+.recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.recipe-card {
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: #101c30;
+}
+
+.recipe-card h3 {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.recipe-card > p:not(.card-index) {
+  color: var(--muted);
+}
+
 @media (max-width: 900px) {
   .site-shell {
     grid-template-columns: minmax(0, 1fr);

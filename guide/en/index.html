@@ -309,6 +309,14 @@ outputButton.addEventListener("click", async () =&gt; {
             on the context.
           </p>
           <p>
+            The Audio example provides copyable recipes for monitoring,
+            recording, mixing, chunk downloads, and native
+            <code>MediaStream</code> handoff. After <code>resume()</code>, read
+            <code>audio-stream-output.stream</code>, inspect its tracks with
+            <code>getAudioTracks()</code>, or pass them to standard browser APIs
+            such as WebRTC.
+          </p>
+          <p>
             Gain, analyser, oscillator, delay and feedback, channel splitter and
             merger, compressor, convolver, panner, buffer source, video recording,
             externally assigned recorder streams, AudioParam automation markup,
