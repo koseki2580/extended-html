@@ -1,7 +1,10 @@
 const context = document.querySelector("audio-context");
 const mic = document.querySelector("audio-input-mic");
 const music = document.querySelector("audio-input-file");
+const recorder = document.querySelector("media-recorder");
 const state = document.querySelector("[data-testid='audio-state']");
+const recordingState = document.querySelector("[data-testid='recording-state']");
+const downloadRecording = document.querySelector("#download-recording");
 const errorMessage = document.querySelector("#audio-error");
 const actions = document.querySelector("[data-audio-actions]");
 const startButton = document.querySelector("#start");
@@ -34,6 +37,8 @@ let started = false;
 let terminal = false;
 let busy = false;
 let toneUrl = null;
+let recordingUrl = null;
+let recordedChunks = [];
 
 const createToneUrl = () => {
   // Generate a self-contained PCM tone so the public example needs no media asset.
@@ -75,6 +80,14 @@ const releaseToneUrl = () => {
   toneUrl = null;
 };
 
+const releaseRecordingUrl = () => {
+  if (recordingUrl === null) return;
+  URL.revokeObjectURL(recordingUrl);
+  recordingUrl = null;
+  downloadRecording.removeAttribute("href");
+  downloadRecording.hidden = true;
+};
+
 const describeData = (data) => {
   if (data instanceof Error) return { name: data.name, message: data.message };
   if (data instanceof MediaStream) {
@@ -85,6 +98,9 @@ const describeData = (data) => {
         readyState,
       })),
     };
+  }
+  if (data instanceof Blob) {
+    return { kind: "Blob", size: data.size, type: data.type };
   }
   if (data instanceof Event) return { type: data.type };
   if (data && typeof data === "object" && "stream" in data) {
@@ -113,6 +129,21 @@ const renderState = () => {
   const value = context.state;
   state.textContent = `${value[0].toUpperCase()}${value.slice(1)}`;
   state.dataset.state = value;
+};
+
+const renderRecordingState = () => {
+  const value = recorder.state;
+  recordingState.textContent = `${value[0].toUpperCase()}${value.slice(1)}`;
+  recordingState.dataset.state = value;
+};
+
+const prepareRecordingDownload = () => {
+  if (recordedChunks.length === 0) return;
+  releaseRecordingUrl();
+  const type = recorder.mimeType || recordedChunks[0].type || "audio/webm";
+  recordingUrl = URL.createObjectURL(new Blob(recordedChunks, { type }));
+  downloadRecording.href = recordingUrl;
+  downloadRecording.hidden = false;
 };
 
 const updateControls = () => {
@@ -254,6 +285,21 @@ for (const type of ["open", "close", "devicechange", "error"]) {
 for (const type of ["play", "playing", "pause", "ended", "error"]) {
   music.addEventListener(type, logEvent);
 }
+for (const type of ["start", "dataavailable", "pause", "resume", "stop", "error"]) {
+  recorder.addEventListener(type, (event) => {
+    // The page aggregates native chunks; the custom element keeps native semantics.
+    if (type === "start") {
+      releaseRecordingUrl();
+      recordedChunks = [];
+    } else if (type === "dataavailable" && event.detail.data.size > 0) {
+      recordedChunks.push(event.detail.data);
+    } else if (type === "stop") {
+      prepareRecordingDownload();
+    }
+    renderRecordingState();
+    logEvent(event);
+  });
+}
 
 startButton.addEventListener("click", () => {
   started = true;
@@ -312,7 +358,15 @@ mediaDevices?.addEventListener?.("devicechange", refreshDevices);
 
 toneUrl = createToneUrl();
 music.src = toneUrl;
-window.addEventListener("beforeunload", releaseToneUrl, { once: true });
+window.addEventListener(
+  "beforeunload",
+  () => {
+    releaseToneUrl();
+    releaseRecordingUrl();
+  },
+  { once: true },
+);
 renderState();
+renderRecordingState();
 updateControls();
 refreshDevices();

@@ -110,6 +110,11 @@ for (const guide of [
     await expect(audioGuide).toContainText("setSinkId()");
     await expect(audioGuide).toContainText("devicechange");
     await expect(audioGuide).toContainText("sinkchange");
+    await expect(audioGuide).toContainText("audio-stream-output");
+    await expect(audioGuide).toContainText("media-recorder");
+    await expect(audioGuide).toContainText("dataavailable");
+    await expect(audioGuide).toContainText("requestData()");
+    await expect(audioGuide).toContainText("timecode");
     await expect(audioGuide).toContainText("AudioWorklet");
     await expect(audioGuide).toContainText("OfflineAudioContext");
     await expect(audioGuide.getByRole("link", { name: /Audio/ })).toHaveAttribute(
@@ -183,11 +188,18 @@ test("Audio example starts and controls every source through its context", async
   const micFilter = mic.locator(":scope > audio-biquad-filter#mic-filter");
   await expect(micFilter).toHaveAttribute("type", "highpass");
   await expect(micFilter.locator(":scope > audio-output#speaker")).toHaveCount(1);
+  const streamOutput = micFilter.locator(
+    ":scope > audio-stream-output#recording-output",
+  );
+  await expect(streamOutput).toHaveCount(1);
+  await expect(
+    streamOutput.locator(":scope > media-recorder#recorder"),
+  ).toHaveCount(1);
   const fileFilter = context.locator(
     ":scope > audio-input-file#music > audio-biquad-filter#file-filter",
   );
   await expect(fileFilter).toHaveAttribute("type", "lowpass");
-  await expect(fileFilter).toHaveAttribute("to", "speaker");
+  await expect(fileFilter).toHaveAttribute("to", "speaker recording-output");
   await expect(page.getByRole("combobox", { name: "Input microphone" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Output speaker" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Microphone filter type" })).toBeVisible();
@@ -202,12 +214,17 @@ test("Audio example starts and controls every source through its context", async
     fetch("../assets/audio-context-example.js").then((response) => response.text()),
   );
   expect(sourceCode).not.toMatch(/\b(?:mic|music|file)\.(?:open|play|close)\s*\(/);
+  expect(sourceCode).not.toMatch(
+    /\brecorder\.(?:start|stop|pause|resume)\s*\(/,
+  );
 
   await expect(page.getByTestId("audio-state")).toHaveText("Suspended");
   await expect(page.getByRole("button", { name: "Start audio" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Suspend audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Resume audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Close audio" })).toBeEnabled();
+  await expect(page.getByTestId("recording-state")).toHaveText("Inactive");
+  await expect(page.getByRole("link", { name: "Download recording" })).toBeHidden();
 
   await page.evaluate(() => {
     const audio = document.querySelector("audio-context");
@@ -237,18 +254,29 @@ test("Audio example starts and controls every source through its context", async
   await expect(page.getByTestId("event-log")).toContainText("music · play");
   await expect(page.getByTestId("event-log")).toContainText('"nodeName":"audio-input-mic"');
   await expect(page.getByTestId("event-log")).toContainText('"data"');
+  await expect(page.getByTestId("event-log")).toContainText("recorder · start");
+  await expect(page.getByTestId("recording-state")).toHaveText("Recording");
 
   await page.getByRole("button", { name: "Suspend audio" }).click();
   await expect(page.getByTestId("audio-state")).toHaveText("Suspended");
+  await expect(page.getByTestId("recording-state")).toHaveText("Paused");
   await expect(page.getByRole("button", { name: "Resume audio" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Resume audio" }).click();
   await expect(page.getByTestId("audio-state")).toHaveText("Running");
+  await expect(page.getByTestId("recording-state")).toHaveText("Recording");
   await expect.poll(() => page.evaluate(() => globalThis.exampleResumeCalls)).toBe(2);
 
   await page.getByRole("button", { name: "Close audio" }).click();
   await expect(page.getByTestId("audio-state")).toHaveText("Closed");
   await expect(page.getByTestId("event-log")).toContainText("mic · close");
+  await expect(page.getByTestId("event-log")).toContainText("recorder · stop");
+  await expect(page.getByTestId("recording-state")).toHaveText("Inactive");
+  await expect(page.getByRole("link", { name: "Download recording" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download recording" })).toHaveAttribute(
+    "href",
+    /^blob:/,
+  );
   await expect(page.getByRole("button", { name: "Start audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Suspend audio" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Resume audio" })).toBeDisabled();

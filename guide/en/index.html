@@ -237,32 +237,52 @@ socket.close();</code></pre>
             <code>&lt;audio-context&gt;</code> owns a declarative graph. Direct source
             siblings start in DOM order, deeper children form serial connections,
             and processor siblings fan out. Use <code>to</code> only to add an edge
-            to a processor or output nested in another source tree.
+            to a processor, physical output, or stream output nested in another
+            source tree.
           </p>
           <pre class="code-block"><code>&lt;audio-context id="audio" sink-id=""&gt;
   &lt;audio-input-mic id="mic" device-id=""&gt;
     &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
       &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
+      &lt;audio-stream-output id="recording-output"&gt;
+        &lt;media-recorder id="recorder" timeslice="1000"&gt;&lt;/media-recorder&gt;
+      &lt;/audio-stream-output&gt;
     &lt;/audio-biquad-filter&gt;
   &lt;/audio-input-mic&gt;
   &lt;audio-input-file id="music" src="./tone.wav" loop&gt;
     &lt;audio-biquad-filter id="file-filter" type="lowpass"
-      frequency="6000" to="speaker"&gt;&lt;/audio-biquad-filter&gt;
+      frequency="6000" to="speaker recording-output"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
           <p>
             Audio has no <code>auto</code> or <code>autoplay</code>. Call the owning
             context's <code>resume()</code> from a user gesture to build the graph
-            and start every source. <code>suspend()</code> pauses or disables them,
-            another <code>resume()</code> restarts them in order, and
-            <code>close()</code> permanently releases the graph. Do not start the
-            microphone or file separately.
+            and start every source followed by every recorder.
+            <code>suspend()</code> pauses recorders before suspending sources,
+            another <code>resume()</code> restarts sources and recorders in order,
+            and <code>close()</code> finalizes recorders before permanently
+            releasing the graph. Do not start the microphone, file, or recorder
+            separately.
           </p>
           <pre class="code-block"><code>const audio = document.querySelector("#audio");
 
 start.addEventListener("click", () =&gt; audio.resume());
 suspend.addEventListener("click", () =&gt; audio.suspend());
 closeButton.addEventListener("click", () =&gt; audio.close());</code></pre>
+          <p>
+            <code>&lt;audio-stream-output&gt;</code> converts its incoming Web Audio
+            signal to a <code>MediaStream</code>. Its one direct
+            <code>&lt;media-recorder&gt;</code> child follows the context lifecycle.
+            Configure it with optional <code>mime-type</code>,
+            <code>audio-bits-per-second</code>, and <code>timeslice</code>
+            attributes. Use <code>requestData()</code> to request a chunk without
+            ending the context-owned recording.
+          </p>
+          <pre class="code-block"><code>const chunks = [];
+recorder.addEventListener("dataavailable", (event) =&gt; {
+  chunks.push(event.detail.data); // Blob
+  console.log(event.detail.metadata.timecode);
+});</code></pre>
           <p>
             Select one microphone on <code>&lt;audio-input-mic&gt;</code> with
             <code>device-id</code>, <code>deviceId</code>, or
@@ -280,18 +300,20 @@ outputButton.addEventListener("click", async () =&gt; {
   await audio.setSinkId(device.deviceId);
 });</code></pre>
           <p>
-            Context, microphone, and file events share the same envelope. Read the
-            payload from <code>event.detail.data</code> and graph identity from
-            <code>event.detail.metadata</code>. Successful live selections emit
+            Context, microphone, file, and recorder events share the same
+            envelope. Read the payload from <code>event.detail.data</code> and
+            graph identity from <code>event.detail.metadata</code>. Recorder
+            <code>dataavailable</code> carries a Blob directly and adds
+            <code>timecode</code> metadata. Successful live selections emit
             <code>devicechange</code> on the microphone and <code>sinkchange</code>
             on the context.
           </p>
           <p>
             Gain, analyser, oscillator, delay and feedback, channel splitter and
-            merger, compressor, convolver, panner, buffer source, media-stream
-            destination, AudioParam automation markup, <code>AudioWorklet</code>,
-            <code>OfflineAudioContext</code>, and microphone constraints other than
-            exact device selection are deferred.
+            merger, compressor, convolver, panner, buffer source, video recording,
+            externally assigned recorder streams, AudioParam automation markup,
+            <code>AudioWorklet</code>, <code>OfflineAudioContext</code>, and
+            microphone constraints other than exact device selection are deferred.
           </p>
           <a class="example-link" href="../../examples/audio-context/">Audio example</a>
         </section>

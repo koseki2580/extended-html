@@ -25,6 +25,9 @@ test("README presents extended-html usage and delegates detail to the guides", a
   assert.match(readme, /<audio-input-file[^>]*>/);
   assert.match(readme, /<audio-biquad-filter[^>]*>/);
   assert.match(readme, /<audio-output><\/audio-output>/);
+  assert.match(readme, /<audio-stream-output>/);
+  assert.match(readme, /<media-recorder/);
+  assert.match(readme, /event\.detail\.data/);
   assert.match(readme, /await audio\.resume\(\)/);
   assert.match(readme, /extended-html\/guide\/ja\//);
   assert.match(readme, /extended-html\/guide\/en\//);

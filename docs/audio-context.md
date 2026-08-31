@@ -24,13 +24,15 @@ the equivalent specifiers are `custom-html` and `custom-html/audio-context`.
 
 Both entry points are safe to load together because each definition is guarded
 against duplicate registration. The Audio-only entry registers exactly these
-five tags:
+seven tags:
 
 - `<audio-context>`
 - `<audio-input-mic>`
 - `<audio-input-file>`
 - `<audio-biquad-filter>`
 - `<audio-output>`
+- `<audio-stream-output>`
+- `<media-recorder>`
 
 The aggregate entry also registers the package's other elements, including
 `<web-socket>`.
@@ -85,8 +87,11 @@ node is created:
   root sources. Ordinary non-audio children do not become graph nodes.
 - A processor or output must be a direct child of another recognized audio
   node. Ordinary HTML wrappers cannot appear inside an audio path.
-- `<audio-output>` is a sink: it cannot contain audio graph elements or declare
-  a non-empty `to` attribute.
+- `<audio-output>` and `<audio-stream-output>` are sinks: neither can contain
+  audio graph elements or declare a non-empty `to` attribute.
+- Each `<audio-stream-output>` contains exactly one direct
+  `<media-recorder>`. A recorder elsewhere in the context is invalid. The
+  recorder consumes the stream but is not itself an Audio graph node or edge.
 - Unknown `audio-*` elements are invalid.
 - Every non-empty `id` in the context scope must be unique, including IDs on
   ordinary elements. Nested `<audio-context>` trees have separate scopes.
@@ -107,10 +112,10 @@ intended for merging two root source trees without flattening the markup:
 ```
 
 `to` accepts one or more whitespace-separated IDs. A target must exist in the
-same nearest `<audio-context>`, must be a processor or output, and must belong
-to a different root source tree. A source, a same-tree node, a node in another
-context, or an ID that exists only outside the context is not a valid target.
-Duplicate logical edges are applied only once.
+same nearest `<audio-context>`, must be a processor, physical output, or stream
+output, and must belong to a different root source tree. A source, a same-tree
+node, a node in another context, or an ID that exists only outside the context
+is not a valid target. Duplicate logical edges are applied only once.
 
 Invalid structure, IDs, configuration, and targets reject the triggering
 `resume()` call with a `DOMException` named `SyntaxError`. A cycle rejects with
@@ -126,29 +131,35 @@ should normally happen from a user gesture required by browser autoplay rules.
 ### `resume()`
 
 On the first call, `resume()` validates the complete graph and configuration,
-creates the native graph, resumes its `AudioContext`, and activates every root
-source sequentially in source DOM order. Once activated, the sources remain
-running concurrently. This means microphone permission and file playback for
-an earlier source complete before the next source is started.
+creates the native graph, resumes its `AudioContext`, activates every root
+source sequentially in source DOM order, and then starts every recorder
+sequentially in recorder DOM order. Once activated, the sources and recorders
+remain running concurrently. This means microphone permission and file
+playback for an earlier source complete before the next source is started, and
+recording begins only after every source has joined the graph.
 
-After `suspend()`, another `resume()` reactivates every source in DOM order. If
-the native context was interrupted while the graph remained active, `resume()`
-resumes the native context without replaying the sources. Concurrent calls for
-the same pending lifecycle operation share one promise, and alternating
-lifecycle calls run in call order.
+After `suspend()`, another `resume()` reactivates every source in DOM order and
+then resumes paused recorders in DOM order. If the native context was
+interrupted while the graph remained active, `resume()` resumes the native
+context without replaying sources or recorders. Concurrent calls for the same
+pending lifecycle operation share one promise, and alternating lifecycle calls
+run in call order.
 
 ### `suspend()`
 
-`suspend()` pauses file inputs, disables every microphone track, and suspends
-the native context. Sources are suspended in reverse DOM order. The graph and
-its resources remain resumable.
+`suspend()` pauses recorders in reverse DOM order, then pauses file inputs and
+disables microphone tracks in reverse source DOM order, and finally suspends
+the native context. The graph and its resources remain resumable. The suspended
+interval is not intentionally recorded.
 
 ### `close()` and removal
 
-`close()` is terminal. It pauses file inputs, stops microphone tracks,
-disconnects the graph, releases owned nodes, and closes the native context.
-Sources are closed in reverse DOM order. Repeated calls share the same promise;
-subsequent `resume()` and `suspend()` calls reject with `InvalidStateError`.
+`close()` is terminal. It stops recorders in reverse DOM order and waits for
+their native `stop` events, which follow final `dataavailable` events. It then
+pauses file inputs, stops microphone tracks, disconnects the graph, releases
+owned nodes, and closes the native context. Sources are closed in reverse DOM
+order. Repeated calls share the same promise; subsequent `resume()` and
+`suspend()` calls reject with `InvalidStateError`.
 
 Removing `<audio-context>` from the document performs the same terminal cleanup.
 Removing it while `resume()` is in flight prevents later sources from starting
@@ -282,6 +293,47 @@ owning context. Removing an attribute restores its documented default.
 The output resolves to the owning native context's `destination`. It has no
 independent start, suspend, or close behavior and is valid only as a sink.
 
+### `<audio-stream-output>`
+
+The stream output creates one native `MediaStreamAudioDestinationNode`. Its
+read-only `stream` property returns the destination stream after graph creation
+and `null` beforehand. It is a graph sink and can receive edges from multiple
+root source trees through `to`, allowing the recorder to capture their native
+Web Audio mix.
+
+Exactly one `<media-recorder>` must be its direct child. The stream output has
+no independent lifecycle behavior; its recorder is coordinated by the owning
+context.
+
+### `<media-recorder>`
+
+The recorder consumes its direct parent's stream. It accepts these attributes:
+
+| Attribute | Default | Native mapping |
+| --- | --- | --- |
+| `mime-type` | empty | `MediaRecorder` constructor `mimeType` option |
+| `audio-bits-per-second` | empty | positive integer `audioBitsPerSecond` option |
+| `timeslice` | empty | non-negative integer passed to `start(timeslice)` |
+
+An empty optional attribute omits its native option. Unsupported non-empty MIME
+types reject with `NotSupportedError`; invalid numeric values reject with
+`SyntaxError`. Configuration is captured when the native recorder is created,
+so later attribute changes do not reconfigure an existing native recorder.
+
+The element exposes read-only `state`, `mimeType`, and `stream`. Before native
+creation they return `"inactive"`, the configured MIME type, and `null`,
+respectively. `requestData()` delegates to an active native recorder and throws
+`InvalidStateError` otherwise. Individual `start()`, `stop()`, `pause()`, and
+`resume()` methods are deliberately absent because `<audio-context>` owns the
+complete declarative graph lifecycle.
+
+Native `start`, `dataavailable`, `pause`, `resume`, `stop`, and `error` events
+are wrapped with the existing event envelope. `dataavailable` carries the Blob
+directly as `event.detail.data` and adds native time information as
+`event.detail.metadata.timecode`. Other recorder events carry the native event
+as data. Applications collect chunks themselves; the element does not create
+an aggregate Blob or synthesize a `complete` event.
+
 ## Events and handlers
 
 Audio events are non-bubbling, non-composed `CustomEvent` instances. They use a
@@ -297,12 +349,13 @@ element.addEventListener("error", (event) => {
 ```
 
 `metadata` contains `contextId`, `nodeId`, and `nodeName`; missing IDs are
-represented by `null`. Context `statechange` carries the native event as data,
-context `sinkchange` carries the previous/current sink IDs and native event,
-context `error` carries the caught error, mic `open` and `close` carry the
-stream, mic `devicechange` carries the previous/current device IDs and new
-stream, mic `error` carries the caught error, and file events carry their native
-media event.
+represented by `null`. An event type may add documented metadata such as a
+recorder Blob's `timecode`. Context `statechange` carries the native event as
+data, context `sinkchange` carries the previous/current sink IDs and native
+event, context `error` carries the caught error, mic `open` and `close` carry
+the stream, mic `devicechange` carries the previous/current device IDs and new
+stream, mic `error` carries the caught error, file events carry their native
+media event, and recorder events follow the contract above.
 
 Normal listener properties and `addEventListener()` are supported. Declarative
 attributes accept only `Handler(event)` or one-segment `Namespace.Handler(event)`:
@@ -327,8 +380,9 @@ to `id`, `to`, device selection, and Biquad configuration attributes. Same-turn
 structural mutations are batched. A valid candidate graph is applied
 transactionally: replacement edges are added before obsolete edges are removed,
 newly added sources start in the candidate DOM order when the context is
-running, unchanged sources keep running, and removed sources are terminally
-closed.
+running, newly added recorders start only after their stream destinations are
+connected, unchanged sources and recorders keep running, and removed recorders
+finalize before their stream outputs are released.
 
 An invalid or stale candidate is not committed. Candidate-only resources and
 configuration changes are rolled back and the last valid graph keeps running.
@@ -340,6 +394,8 @@ mutations can recover without recreating the existing graph. Imperative
 ## Errors and security boundaries
 
 - Web Audio unavailability rejects initial `resume()` with `NotSupportedError`.
+- MediaRecorder unavailability or an unsupported MIME type rejects initial
+  `resume()` with `NotSupportedError` before an `AudioContext` is created.
 - Calls after terminal close reject with `InvalidStateError`.
 - Native media playback, permission, context, node creation, connection, and
   cleanup errors reject the responsible lifecycle call where applicable and
@@ -359,7 +415,8 @@ mutations can recover without recreating the existing graph. Imperative
 
 The current contract intentionally does not include gain, analyser, oscillator,
 delay or feedback helpers, channel splitter/merger or indexed ports, compressor,
-convolver, panner, buffer source, media-stream destination, declarative
-`AudioParam` automation markup, `AudioWorklet`, `OfflineAudioContext`, or
-microphone constraints other than exact `deviceId`. Unknown `audio-*` tags
-remain invalid until an explicit contract is added.
+convolver, panner, buffer source, video recording, externally assigned streams,
+multiple recorders per stream output, declarative `AudioParam` automation
+markup, `AudioWorklet`, `OfflineAudioContext`, or microphone constraints other
+than exact `deviceId`. Unknown `audio-*` tags remain invalid until an explicit
+contract is added.

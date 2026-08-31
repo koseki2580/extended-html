@@ -229,30 +229,50 @@ socket.close();</code></pre>
           <p>
             <code>&lt;audio-context&gt;</code>が宣言的なgraph全体を所有します。
             直下のsource siblingはDOM順に開始し、深い子要素は直列接続、processor siblingはfan-outになります。
-            <code>to</code>は別のsource tree内にネスト済みのprocessorまたはoutputへedgeを追加する場合だけ使います。
+            <code>to</code>は別のsource tree内にネスト済みのprocessor、物理output、または
+            stream outputへedgeを追加する場合だけ使います。
           </p>
           <pre class="code-block"><code>&lt;audio-context id="audio" sink-id=""&gt;
   &lt;audio-input-mic id="mic" device-id=""&gt;
     &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
       &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
+      &lt;audio-stream-output id="recording-output"&gt;
+        &lt;media-recorder id="recorder" timeslice="1000"&gt;&lt;/media-recorder&gt;
+      &lt;/audio-stream-output&gt;
     &lt;/audio-biquad-filter&gt;
   &lt;/audio-input-mic&gt;
   &lt;audio-input-file id="music" src="./tone.wav" loop&gt;
     &lt;audio-biquad-filter id="file-filter" type="lowpass"
-      frequency="6000" to="speaker"&gt;&lt;/audio-biquad-filter&gt;
+      frequency="6000" to="speaker recording-output"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
           <p>
             Audioには<code>auto</code>も<code>autoplay</code>もありません。
-            ユーザー操作から所有者であるcontextの<code>resume()</code>を呼ぶと、graphを構築してすべてのsourceを開始します。
-            <code>suspend()</code>は各sourceを一時停止または無効化し、次の<code>resume()</code>は順番に再開します。
-            <code>close()</code>はgraphを完全に解放するため、その後は再開できません。micやfileを個別には開始しません。
+            ユーザー操作から所有者であるcontextの<code>resume()</code>を呼ぶと、graphを構築し、
+            すべてのsource、その後にすべてのrecorderを開始します。
+            <code>suspend()</code>はrecorderをpauseしてからsourceを一時停止または無効化し、
+            次の<code>resume()</code>はsourceとrecorderを順番に再開します。
+            <code>close()</code>はrecorderをfinalizeしてからgraphを完全に解放します。
+            mic、file、recorderを個別には開始しません。
           </p>
           <pre class="code-block"><code>const audio = document.querySelector("#audio");
 
 start.addEventListener("click", () =&gt; audio.resume());
 suspend.addEventListener("click", () =&gt; audio.suspend());
 closeButton.addEventListener("click", () =&gt; audio.close());</code></pre>
+          <p>
+            <code>&lt;audio-stream-output&gt;</code>は入力されたWeb Audio信号を
+            <code>MediaStream</code>へ変換します。直下に1つだけ置く
+            <code>&lt;media-recorder&gt;</code>はcontextのlifecycleに従います。
+            任意の<code>mime-type</code>、<code>audio-bits-per-second</code>、
+            <code>timeslice</code>属性で設定できます。context所有の録音を終了せずにchunkを
+            要求する場合は<code>requestData()</code>を使います。
+          </p>
+          <pre class="code-block"><code>const chunks = [];
+recorder.addEventListener("dataavailable", (event) =&gt; {
+  chunks.push(event.detail.data); // Blob
+  console.log(event.detail.metadata.timecode);
+});</code></pre>
           <p>
             microphoneは<code>&lt;audio-input-mic&gt;</code>の<code>device-id</code>、
             <code>deviceId</code>、または<code>setDeviceId()</code>で選択します。
@@ -269,14 +289,16 @@ outputButton.addEventListener("click", async () =&gt; {
   await audio.setSinkId(device.deviceId);
 });</code></pre>
           <p>
-            context、microphone、fileのeventは同じenvelopeを使います。
+            context、microphone、file、recorderのeventは同じenvelopeを使います。
             payloadは<code>event.detail.data</code>、graph上の識別情報は
-            <code>event.detail.metadata</code>から読み取ります。実行中の選択に成功すると、
+            <code>event.detail.metadata</code>から読み取ります。recorderの
+            <code>dataavailable</code>はBlobを直接渡し、metadataへ<code>timecode</code>を追加します。
+            実行中の選択に成功すると、
             microphoneは<code>devicechange</code>、contextは<code>sinkchange</code>を通知します。
           </p>
           <p>
             gain、analyser、oscillator、delayとfeedback、channel splitter/merger、compressor、convolver、
-            panner、buffer source、media-stream destination、AudioParam automation markup、
+            panner、buffer source、video recording、外部streamのrecorderへの代入、AudioParam automation markup、
             <code>AudioWorklet</code>、<code>OfflineAudioContext</code>、exact device選択以外の
             microphone constraintsは今後の対象です。
           </p>

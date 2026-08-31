@@ -52,33 +52,45 @@ without changing the methods or events:
 
 ## Use `<audio-context>`
 
-Register only the five Audio elements when the aggregate entry is not needed:
+Register only the seven Audio elements when the aggregate entry is not needed:
 
 ```html
 <script type="module" src="https://koseki2580.github.io/extended-html/src/audio/index.js"></script>
 ```
 
-Describe the audio graph through nesting, then start every source with one
-user-initiated `resume()` call:
+Describe playback and recording through nesting, then start the complete graph
+with one user-initiated `resume()` call:
 
 ```html
 <audio-context id="audio">
   <audio-input-file src="./music.mp3">
     <audio-biquad-filter type="lowpass" frequency="1200">
       <audio-output></audio-output>
+      <audio-stream-output>
+        <media-recorder id="recorder"></media-recorder>
+      </audio-stream-output>
     </audio-biquad-filter>
   </audio-input-file>
 </audio-context>
 
 <button id="start" type="button">Start audio</button>
+<button id="close" type="button">Finish recording</button>
 
 <script type="module">
   const audio = document.querySelector("#audio");
   const start = document.querySelector("#start");
+  const close = document.querySelector("#close");
+  const recorder = document.querySelector("#recorder");
+  const chunks = [];
+
+  recorder.addEventListener("dataavailable", (event) => {
+    chunks.push(event.detail.data);
+  });
 
   start.addEventListener("click", async () => {
     await audio.resume();
   });
+  close.addEventListener("click", () => audio.close());
 </script>
 ```
 

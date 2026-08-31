@@ -19,8 +19,8 @@
           <p class="eyebrow">Web Audio · Declarative graph</p>
           <h1>Build one<br />audio graph.</h1>
           <p class="hero-copy">
-            Nest sources, processing, and output in HTML. One context action
-            starts the microphone and generated tone in source order.
+            Nest sources, processing, playback, and recording in HTML. One
+            context action starts the complete graph in order.
           </p>
         </header>
 
@@ -40,7 +40,17 @@
                 state:
                 <strong data-testid="audio-state">Suspended</strong>
               </span>
+              <span class="status-pill">
+                recorder:
+                <strong data-testid="recording-state">Inactive</strong>
+              </span>
             </div>
+            <a
+              class="example-link"
+              id="download-recording"
+              download="extended-html-recording.webm"
+              hidden
+            >Download recording</a>
             <p id="audio-error" class="field-help" role="alert" aria-live="assertive"></p>
             <div
               class="socket-actions"
@@ -133,11 +143,14 @@
   &lt;audio-input-mic id="mic"&gt;
     &lt;audio-biquad-filter id="mic-filter" type="highpass" frequency="120"&gt;
       &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
+      &lt;audio-stream-output id="recording-output"&gt;
+        &lt;media-recorder id="recorder" timeslice="1000"&gt;&lt;/media-recorder&gt;
+      &lt;/audio-stream-output&gt;
     &lt;/audio-biquad-filter&gt;
   &lt;/audio-input-mic&gt;
   &lt;audio-input-file id="music" loop&gt;
     &lt;audio-biquad-filter id="file-filter" type="lowpass"
-      frequency="6000" to="speaker"&gt;&lt;/audio-biquad-filter&gt;
+      frequency="6000" to="speaker recording-output"&gt;&lt;/audio-biquad-filter&gt;
   &lt;/audio-input-file&gt;
 &lt;/audio-context&gt;</code></pre>
           </section>
@@ -149,6 +162,9 @@
       <audio-input-mic id="mic">
         <audio-biquad-filter id="mic-filter" type="highpass" frequency="120">
           <audio-output id="speaker"></audio-output>
+          <audio-stream-output id="recording-output">
+            <media-recorder id="recorder" timeslice="1000"></media-recorder>
+          </audio-stream-output>
         </audio-biquad-filter>
       </audio-input-mic>
       <audio-input-file id="music" loop>
@@ -156,7 +172,7 @@
           id="file-filter"
           type="lowpass"
           frequency="6000"
-          to="speaker"
+          to="speaker recording-output"
         ></audio-biquad-filter>
       </audio-input-file>
     </audio-context>
