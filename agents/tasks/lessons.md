@@ -55,3 +55,10 @@
 - **Rule:** Prepare replacements in the owner's current running or suspended state before committing them.
 - **Why:** Atomic resource replacement must preserve lifecycle state as well as graph connectivity.
 - **Apply-when:** Swapping streams, transports, workers, or other live child resources.
+
+## Scope semantic locators by meaning
+
+- **What happened:** Adding a second accessible note made an existing role-only Playwright locator ambiguous.
+- **Rule:** When a role can legitimately repeat, scope its locator by accessible name or distinctive user-visible text.
+- **Why:** Semantic roles describe a category, not uniqueness, and pages naturally gain more elements in that category.
+- **Apply-when:** Writing E2E assertions for notes, status regions, buttons, links, or other repeated roles.
