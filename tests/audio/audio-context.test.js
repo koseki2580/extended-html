@@ -3,6 +3,8 @@ import { AudioInputMicElement } from "../../src/audio/audio-input-mic.js";
 import { AudioInputFileElement } from "../../src/audio/audio-input-file.js";
 import { AudioBiquadFilterElement } from "../../src/audio/audio-biquad-filter.js";
 import { AudioOutputElement } from "../../src/audio/audio-output.js";
+import { AudioStreamOutputElement } from "../../src/audio/audio-stream-output.js";
+import { MediaRecorderElement } from "../../src/audio/media-recorder.js";
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -40,6 +42,50 @@ if (!customElements.get("audio-biquad-filter")) {
 }
 if (!customElements.get("audio-output")) {
   customElements.define("audio-output", AudioOutputElement);
+}
+if (!customElements.get("audio-stream-output")) {
+  customElements.define("audio-stream-output", AudioStreamOutputElement);
+}
+if (!customElements.get("media-recorder")) {
+  customElements.define("media-recorder", MediaRecorderElement);
+}
+
+class FakeMediaRecorder extends EventTarget {
+  static instances = [];
+
+  static isTypeSupported(type) {
+    return type === "audio/webm";
+  }
+
+  constructor(stream, options = {}) {
+    super();
+    this.stream = stream;
+    this.mimeType = options.mimeType ?? "audio/webm";
+    this.state = "inactive";
+    FakeMediaRecorder.instances.push(this);
+  }
+
+  start() {
+    this.state = "recording";
+    this.dispatchEvent(new Event("start"));
+  }
+
+  pause() {
+    this.state = "paused";
+    this.dispatchEvent(new Event("pause"));
+  }
+
+  resume() {
+    this.state = "recording";
+    this.dispatchEvent(new Event("resume"));
+  }
+
+  requestData() {}
+
+  stop() {
+    this.state = "inactive";
+    queueMicrotask(() => this.dispatchEvent(new Event("stop")));
+  }
 }
 
 class FakeAudioContext extends EventTarget {
@@ -88,6 +134,13 @@ class FakeAudioContext extends EventTarget {
     };
   }
 
+  createMediaStreamDestination() {
+    return {
+      ...this.createNode("stream-output"),
+      stream: { id: `recording-${FakeAudioContext.instances.length}` },
+    };
+  }
+
   async resume() {
     this.events.push("resume");
     this.state = "running";
@@ -117,6 +170,7 @@ class FakeAudioContext extends EventTarget {
 }
 
 const nativeDescriptor = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
+const recorderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "MediaRecorder");
 
 const installFakeAudioContext = () => {
   FakeAudioContext.instances.length = 0;
@@ -128,11 +182,22 @@ const installFakeAudioContext = () => {
     writable: true,
     value: FakeAudioContext,
   });
+  FakeMediaRecorder.instances.length = 0;
+  Object.defineProperty(globalThis, "MediaRecorder", {
+    configurable: true,
+    writable: true,
+    value: FakeMediaRecorder,
+  });
 };
 
 const restoreAudioContext = () => {
   if (nativeDescriptor) Object.defineProperty(globalThis, "AudioContext", nativeDescriptor);
   else delete globalThis.AudioContext;
+  if (recorderDescriptor) {
+    Object.defineProperty(globalThis, "MediaRecorder", recorderDescriptor);
+  } else {
+    delete globalThis.MediaRecorder;
+  }
 };
 
 const createElement = () => {
@@ -470,6 +535,29 @@ describe("AudioContextElement", () => {
     assertEqual(FakeAudioContext.instances.length, 0, "no native context");
     assertEqual(FakeAudioContext.nodeCreations, 0, "no native node");
     assertEqual(FakeAudioContext.mediaSourceCreations, 0, "no media source");
+  });
+
+  it("preflights recorder configuration before creating browser resources", async () => {
+    const context = document.createElement("audio-context");
+    context.innerHTML = `
+      <audio-input-file>
+        <audio-stream-output>
+          <media-recorder timeslice="-1"></media-recorder>
+        </audio-stream-output>
+      </audio-input-file>`;
+    const file = context.querySelector("audio-input-file");
+    file._getMediaElement().play = async () => {};
+    file._getMediaElement().pause = () => {};
+
+    await assertRejects(
+      context.resume(),
+      "SyntaxError",
+      "timeslice must be a non-negative integer",
+    );
+
+    assertEqual(FakeAudioContext.instances.length, 0, "no native context");
+    assertEqual(FakeAudioContext.nodeCreations, 0, "no native node");
+    assertEqual(FakeMediaRecorder.instances.length, 0, "no native recorder");
   });
 
   it("coalesces concurrent resume and suspend calls", async () => {
@@ -849,6 +937,32 @@ describe("AudioContextElement", () => {
 
     assertEqual(filter.frequency.value, 777, "imperative AudioParam is preserved");
     assertEqual(context.state, "running", "non-audio child is ignored by the graph");
+  });
+
+  it("reconciles a recorder-only replacement while the graph is running", async () => {
+    const context = document.createElement("audio-context");
+    context.innerHTML = `
+      <audio-input-file>
+        <audio-stream-output>
+          <media-recorder></media-recorder>
+        </audio-stream-output>
+      </audio-input-file>`;
+    const file = context.querySelector("audio-input-file");
+    file._getMediaElement().play = async () => {};
+    file._getMediaElement().pause = () => {};
+    document.body.append(context);
+    await context.resume();
+    const output = context.querySelector("audio-stream-output");
+    const firstElement = output.querySelector("media-recorder");
+    const firstNative = FakeMediaRecorder.instances[0];
+    const replacement = document.createElement("media-recorder");
+
+    firstElement.replaceWith(replacement);
+    await flushReconciliation();
+
+    assertEqual(firstNative.state, "inactive", "removed recorder is finalized");
+    assertEqual(FakeMediaRecorder.instances.length, 2, "replacement recorder is created");
+    assertEqual(FakeMediaRecorder.instances[1].state, "recording", "replacement starts");
   });
 
   it("reconciles added and removed running sources without restarting unchanged sources", async () => {

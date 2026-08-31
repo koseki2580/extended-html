@@ -133,6 +133,7 @@ test("one context resume starts the nested microphone and file graph in DOM orde
       "BiquadFilterNode",
       "MediaElementAudioSourceNode",
       "MediaStreamAudioSourceNode",
+      "MediaStreamAudioDestinationNode",
     ];
     const targetGraphs = webAudio.graphs().filter(({ nodes }) =>
       requiredNodeTypes.every((type) => nodes.some((node) => node.type === type)),
@@ -148,7 +149,8 @@ test("one context resume starts the nested microphone and file graph in DOM orde
     const filterId = nodeId("BiquadFilterNode");
     const fileId = nodeId("MediaElementAudioSourceNode");
     const micId = nodeId("MediaStreamAudioSourceNode");
-    expect(graph.connections).toHaveLength(3);
+    const streamDestinationId = nodeId("MediaStreamAudioDestinationNode");
+    expect(graph.connections).toHaveLength(4);
     expect(graph.connections).toEqual(
       sortNativeConnections([
         {
@@ -169,12 +171,69 @@ test("one context resume starts the nested microphone and file graph in DOM orde
           sourceId: filterId,
           destinationId,
         },
+        {
+          source: "BiquadFilterNode",
+          destination: "MediaStreamAudioDestinationNode",
+          sourceId: filterId,
+          destinationId: streamDestinationId,
+        },
       ]),
     );
     expect(browserErrors).toEqual([]);
   } finally {
     await webAudio.close();
   }
+});
+
+test("the context owns recorder start, chunk delivery, suspension, resume, and DOM cleanup", async ({
+  page,
+}) => {
+  const browserErrors = await openFixture(page);
+
+  await page.evaluate(() => globalThis.audioFixture.context.resume());
+  await page.waitForFunction(
+    () =>
+      globalThis.audioFixture.recorder.state === "recording" &&
+      globalThis.audioFixture.events.some(
+        ({ node, type }) => node === "recorder" && type === "start",
+      ),
+  );
+
+  await page.evaluate(() => globalThis.audioFixture.recorder.requestData());
+  await page.waitForFunction(() => globalThis.audioFixture.recordedChunks.length > 0);
+  const recording = await snapshot(page);
+  const firstChunk = recording.events.find(
+    ({ node, type }) => node === "recorder" && type === "dataavailable",
+  );
+  expect(firstChunk).toMatchObject({
+    dataKind: "Blob",
+    metadata: {
+      contextId: "audio",
+      nodeId: "recorder",
+      nodeName: "media-recorder",
+    },
+  });
+  expect(typeof firstChunk.metadata.timecode).toBe("number");
+
+  await page.evaluate(() => globalThis.audioFixture.context.suspend());
+  await page.waitForFunction(() => globalThis.audioFixture.recorder.state === "paused");
+  await page.evaluate(() => globalThis.audioFixture.context.resume());
+  await page.waitForFunction(() => globalThis.audioFixture.recorder.state === "recording");
+
+  await page.evaluate(() => globalThis.audioFixture.context.remove());
+  await page.waitForFunction(() => globalThis.audioFixture.context.state === "closed");
+  const removed = await snapshot(page);
+  const recorderStop = removed.events.findIndex(
+    ({ node, type }) => node === "recorder" && type === "stop",
+  );
+  const micClose = removed.events.findIndex(
+    ({ node, type }) => node === "mic" && type === "close",
+  );
+  expect(recorderStop).toBeGreaterThanOrEqual(0);
+  expect(micClose).toBeGreaterThan(recorderStop);
+  expect(removed.recorderState).toBe("inactive");
+  expect(removed.recordedChunkCount).toBeGreaterThan(0);
+  expect(browserErrors).toEqual([]);
 });
 
 test("an exact microphone selection can be replaced and DOM removal releases it", async ({

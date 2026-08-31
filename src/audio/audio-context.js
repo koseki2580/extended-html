@@ -209,6 +209,9 @@ export class AudioContextElement extends AudioEventTargetElement {
         for (const { element } of plan.nodes) {
           element._validateAudioConfiguration();
         }
+        for (const { element } of plan.consumers) {
+          element._validateAudioConfiguration();
+        }
         const Context = globalThis.AudioContext ?? globalThis.webkitAudioContext;
         if (typeof Context !== "function") throw unavailableError();
         this.#nativeContext = new Context();
@@ -323,6 +326,9 @@ export class AudioContextElement extends AudioEventTargetElement {
       for (const { element } of candidatePlan.nodes) {
         element._validateAudioConfiguration();
       }
+      for (const { element } of candidatePlan.consumers) {
+        element._validateAudioConfiguration();
+      }
       const committed = await this.#runtime.reconcile(candidatePlan, {
         isCurrent: () =>
           !this.#closed && generation === this.#mutationGeneration,
@@ -414,6 +420,7 @@ export class AudioContextElement extends AudioEventTargetElement {
     if (node.localName === "audio-context") return false;
     if (node.id) return true;
     if (node.localName.startsWith("audio-")) return true;
+    if (node.localName === "media-recorder") return true;
     return [...node.children].some((child) =>
       this.#subtreeAffectsAudioGraph(child),
     );

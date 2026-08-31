@@ -15,6 +15,8 @@ const AUDIO_TAGS = [
   "audio-input-file",
   "audio-biquad-filter",
   "audio-output",
+  "audio-stream-output",
+  "media-recorder",
 ];
 
 const loadEntryInIsolatedRealm = async (entry, importLabels) => {
@@ -45,7 +47,7 @@ const loadEntryInIsolatedRealm = async (entry, importLabels) => {
 };
 
 describe("Audio custom element registration", () => {
-  it("registers only the five Audio tags once from the Audio entry", async () => {
+  it("registers only the seven Audio tags once from the Audio entry", async () => {
     const result = await loadEntryInIsolatedRealm("../../src/audio/index.js", [
       "audio-first",
       "audio-repeat",

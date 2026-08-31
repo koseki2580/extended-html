@@ -76,11 +76,53 @@ class RuntimeSourceElement extends AudioSourceElement {
   }
 }
 
+class RuntimeConsumerElement extends HTMLElement {
+  owner = null;
+  activate = async () => {};
+  suspend = async () => {};
+  close = async () => {};
+  rollbackCandidate = async () => this.suspend();
+
+  _setAudioOwner(owner) {
+    if (this.owner !== null && this.owner !== owner) {
+      throw new DOMException("Consumer already has an owner", "InvalidStateError");
+    }
+    this.owner = owner;
+  }
+
+  _clearAudioOwner(owner) {
+    if (this.owner === owner) this.owner = null;
+  }
+
+  _getAudioOwner() {
+    return this.owner;
+  }
+
+  _activate(stream) {
+    return this.activate(stream);
+  }
+
+  _suspend() {
+    return this.suspend();
+  }
+
+  _close() {
+    return this.close();
+  }
+
+  _rollbackAudioCandidate() {
+    return this.rollbackCandidate();
+  }
+}
+
 if (!customElements.get("test-runtime-node")) {
   customElements.define("test-runtime-node", RuntimeNodeElement);
 }
 if (!customElements.get("test-runtime-source")) {
   customElements.define("test-runtime-source", RuntimeSourceElement);
+}
+if (!customElements.get("test-runtime-consumer")) {
+  customElements.define("test-runtime-consumer", RuntimeConsumerElement);
 }
 if (!customElements.get("test-runtime-mic")) {
   customElements.define("test-runtime-mic", AudioInputMicElement);
@@ -179,6 +221,122 @@ describe("AudioGraphRuntime", () => {
     assertEqual(fixture.first._getAudioOwner(), fixture.owner, "source owner");
     assertEqual(fixture.filter._getAudioOwner(), fixture.owner, "processor owner");
     assertEqual(runtime.state, "running", "runtime state");
+  });
+
+  it("activates consumers after sources and suspends and closes them first in reverse order", async () => {
+    const fixture = createFixture();
+    const stream = { id: "recording-stream" };
+    fixture.output.nativeNode.stream = stream;
+    fixture.first.activate = async () => fixture.events.push("activate:first");
+    fixture.second.activate = async () => fixture.events.push("activate:second");
+    fixture.first.suspend = async () => fixture.events.push("suspend:first");
+    fixture.second.suspend = async () => fixture.events.push("suspend:second");
+    fixture.first.close = async () => fixture.events.push("close:first");
+    fixture.second.close = async () => fixture.events.push("close:second");
+    const firstRecorder = document.createElement("test-runtime-consumer");
+    const secondRecorder = document.createElement("test-runtime-consumer");
+    firstRecorder.activate = async (received) => {
+      assertEqual(received, stream, "first consumer stream");
+      fixture.events.push("activate:recorder-first");
+    };
+    secondRecorder.activate = async (received) => {
+      assertEqual(received, stream, "second consumer stream");
+      fixture.events.push("activate:recorder-second");
+    };
+    firstRecorder.suspend = async () => fixture.events.push("suspend:recorder-first");
+    secondRecorder.suspend = async () => fixture.events.push("suspend:recorder-second");
+    firstRecorder.close = async () => fixture.events.push("close:recorder-first");
+    secondRecorder.close = async () => fixture.events.push("close:recorder-second");
+    fixture.plan.consumers = [
+      { element: firstRecorder, output: fixture.output },
+      { element: secondRecorder, output: fixture.output },
+    ];
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+
+    await runtime.resume();
+    assert(
+      fixture.events.indexOf("activate:second") <
+        fixture.events.indexOf("activate:recorder-first"),
+      "every source starts before the first consumer",
+    );
+    assert(
+      fixture.events.indexOf("activate:recorder-first") <
+        fixture.events.indexOf("activate:recorder-second"),
+      "consumers start in DOM order",
+    );
+    assertEqual(firstRecorder._getAudioOwner(), fixture.owner, "consumer owner");
+
+    fixture.events.length = 0;
+    await runtime.suspend();
+    assertEqual(
+      fixture.events.join(","),
+      "suspend:recorder-second,suspend:recorder-first,suspend:second,suspend:first,context:suspend",
+      "consumer-first reverse suspension",
+    );
+
+    fixture.events.length = 0;
+    await runtime.close();
+    assertEqual(
+      fixture.events.slice(0, 4).join(","),
+      "close:recorder-second,close:recorder-first,close:second,close:first",
+      "consumer-first reverse terminal close",
+    );
+    assertEqual(firstRecorder._getAudioOwner(), null, "consumer owner is released");
+  });
+
+  it("starts an added consumer after its new output connects and closes it before removal", async () => {
+    const fixture = createFixture();
+    fixture.plan.consumers = [];
+    const runtime = new AudioGraphRuntime(
+      fixture.owner,
+      fixture.context,
+      fixture.plan,
+    );
+    await runtime.resume();
+    fixture.events.length = 0;
+
+    const streamOutput = document.createElement("test-runtime-node");
+    streamOutput.nativeNode = createNativeNode("recording", fixture.events);
+    streamOutput.nativeNode.stream = { id: "candidate-stream" };
+    const recorder = document.createElement("test-runtime-consumer");
+    recorder.activate = async (stream) => {
+      fixture.events.push(`activate:recorder:${stream.id}`);
+    };
+    recorder.close = async () => fixture.events.push("close:recorder");
+    const candidate = {
+      nodes: [
+        ...fixture.plan.nodes,
+        { element: streamOutput, role: "output", rootSource: fixture.first },
+      ],
+      edges: [
+        ...fixture.plan.edges,
+        { from: fixture.filter, to: streamOutput },
+      ],
+      sources: fixture.plan.sources,
+      consumers: [{ element: recorder, output: streamOutput }],
+    };
+
+    await runtime.reconcile(candidate);
+
+    assert(
+      fixture.events.indexOf("connect:filter->recording") <
+        fixture.events.indexOf("activate:recorder:candidate-stream"),
+      "candidate output connects before its recorder starts",
+    );
+    fixture.events.length = 0;
+
+    await runtime.reconcile(fixture.plan);
+
+    assert(
+      fixture.events.indexOf("close:recorder") <
+        fixture.events.indexOf("disconnect:filter->recording"),
+      "recorder finalizes before its output disconnects",
+    );
+    assertEqual(recorder._getAudioOwner(), null, "removed consumer owner is released");
   });
 
   it("waits for each source before activating the next and leaves both active", async () => {

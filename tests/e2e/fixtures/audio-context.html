@@ -10,6 +10,9 @@
       <audio-input-mic id="mic">
         <audio-biquad-filter id="mix" frequency="1200">
           <audio-output id="output"></audio-output>
+          <audio-stream-output id="recording-output">
+            <media-recorder id="recorder"></media-recorder>
+          </audio-stream-output>
         </audio-biquad-filter>
       </audio-input-mic>
       <audio-input-file
@@ -27,7 +30,9 @@
       const context = document.querySelector("#audio");
       const mic = document.querySelector("#mic");
       const file = document.querySelector("#music");
+      const recorder = document.querySelector("#recorder");
       const events = [];
+      const recordedChunks = [];
       let micStream = null;
       const micStreams = [];
 
@@ -65,6 +70,14 @@
       for (const type of ["play", "playing", "pause", "ended", "error"]) {
         file.addEventListener(type, record("music"));
       }
+      for (const type of ["start", "dataavailable", "pause", "resume", "stop", "error"]) {
+        recorder.addEventListener(type, (event) => {
+          if (type === "dataavailable" && event.detail.data.size > 0) {
+            recordedChunks.push(event.detail.data);
+          }
+          record("recorder")(event);
+        });
+      }
 
       const trackStates = () =>
         micStream?.getTracks().map(({ enabled, readyState }) => ({
@@ -77,11 +90,15 @@
         context,
         mic,
         file,
+        recorder,
         events,
+        recordedChunks,
         snapshot: () => ({
           connected: context.isConnected,
           contextState: context.state,
           filePaused: file.paused,
+          recorderState: recorder.state,
+          recordedChunkCount: recordedChunks.length,
           micTracks: trackStates(),
           micStreamHistory: micStreams.map((stream) =>
             stream.getTracks().map(({ enabled, readyState }) => ({

@@ -1,7 +1,13 @@
 const DECLARATIVE_HANDLER_PATTERN =
   /^\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(\s*event\s*\)\s*;?\s*$/;
 
-export const dispatchAudioEvent = (element, type, data, owner) =>
+export const dispatchAudioEvent = (
+  element,
+  type,
+  data,
+  owner,
+  metadata = {},
+) =>
   element.dispatchEvent(
     new CustomEvent(type, {
       bubbles: false,
@@ -12,6 +18,7 @@ export const dispatchAudioEvent = (element, type, data, owner) =>
           contextId: owner?.id || null,
           nodeId: element.id || null,
           nodeName: element.localName,
+          ...metadata,
         },
       },
     }),

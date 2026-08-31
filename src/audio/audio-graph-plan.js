@@ -3,6 +3,7 @@ const ROLES = new Map([
   ["audio-input-file", "source"],
   ["audio-biquad-filter", "processor"],
   ["audio-output", "output"],
+  ["audio-stream-output", "output"],
 ]);
 
 const isAudioTag = (element) => element.localName.startsWith("audio-");
@@ -56,6 +57,7 @@ export const buildAudioGraphPlan = (contextElement) => {
   const elements = scopedElements(contextElement);
   const ids = new Map();
   const nodes = [];
+  const recorders = [];
 
   for (const element of elements) {
     if (element.id) {
@@ -74,14 +76,22 @@ export const buildAudioGraphPlan = (contextElement) => {
     nodes.push({ element, role, rootSource: null, nodeIndex: nodes.length });
   }
 
+  for (const element of elements) {
+    if (element.localName === "media-recorder") recorders.push(element);
+  }
+
   const nodeFor = new Map(nodes.map((node) => [node.element, node]));
   for (const node of nodes) {
     const parentNode = nodeFor.get(node.element.parentElement);
     if (node.role === "output" && node.element.getAttribute("to")?.trim()) {
-      throw syntaxError("<audio-output> cannot declare a non-empty to attribute");
+      throw syntaxError(
+        `<${node.element.localName}> cannot declare a non-empty to attribute`,
+      );
     }
     if (parentNode?.role === "output") {
-      throw syntaxError("<audio-output> cannot contain audio graph elements");
+      throw syntaxError(
+        `<${parentNode.element.localName}> cannot contain audio graph elements`,
+      );
     }
     if (node.role === "source") {
       if (node.element.parentElement !== contextElement) {
@@ -98,6 +108,26 @@ export const buildAudioGraphPlan = (contextElement) => {
       );
     }
     node.rootSource = parentNode.rootSource;
+  }
+
+  for (const recorder of recorders) {
+    if (recorder.parentElement?.localName !== "audio-stream-output") {
+      throw syntaxError(
+        "<media-recorder> must be a direct child of <audio-stream-output>",
+      );
+    }
+  }
+
+  for (const node of nodes) {
+    if (node.element.localName !== "audio-stream-output") continue;
+    const directRecorders = [...node.element.children].filter(
+      (child) => child.localName === "media-recorder",
+    );
+    if (directRecorders.length !== 1) {
+      throw syntaxError(
+        "<audio-stream-output> must contain exactly one direct <media-recorder> child",
+      );
+    }
   }
 
   const edges = [];
@@ -142,5 +172,9 @@ export const buildAudioGraphPlan = (contextElement) => {
     nodes: planNodes,
     edges,
     sources: planNodes.filter((node) => node.role === "source"),
+    consumers: recorders.map((element) => ({
+      element,
+      output: element.parentElement,
+    })),
   };
 };

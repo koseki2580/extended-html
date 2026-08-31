@@ -101,8 +101,21 @@ export class AudioGraphRuntime {
     const addedSources = candidatePlan.sources.filter(
       ({ element }) => !previousElements.has(element),
     );
+    const previousConsumerElements = new Set(
+      this.#consumers(previousPlan).map(({ element }) => element),
+    );
+    const candidateConsumerElements = new Set(
+      this.#consumers(candidatePlan).map(({ element }) => element),
+    );
+    const addedConsumers = this.#consumers(candidatePlan).filter(
+      ({ element }) => !previousConsumerElements.has(element),
+    );
+    const removedConsumers = this.#consumers(previousPlan)
+      .filter(({ element }) => !candidateConsumerElements.has(element))
+      .reverse();
     const addedEdgeKeys = [];
     const activatedSources = [];
+    const activatedConsumers = [];
     const configuredNodes = [];
     const configuredElements = new Set();
     const configureNode = (element) => {
@@ -142,6 +155,10 @@ export class AudioGraphRuntime {
         configureNode(element);
       }
 
+      for (const { element } of addedConsumers) {
+        element._setAudioOwner(this.#owner);
+      }
+
       this.#applyAvailableEdges(candidatePlan, addedEdgeKeys);
       if (this.#state === "running") {
         for (const { element } of addedSources) {
@@ -159,17 +176,38 @@ export class AudioGraphRuntime {
           await element._connected();
           this.#throwIfCandidateStale(isCurrent);
         }
+        for (const consumer of addedConsumers) {
+          this.#throwIfTerminalRequested();
+          this.#throwIfCandidateStale(isCurrent);
+          activatedConsumers.push(consumer.element);
+          await consumer.element._activate(this.#consumerStream(consumer));
+          this.#throwIfTerminalRequested();
+          this.#throwIfCandidateStale(isCurrent);
+        }
       }
       this.#throwIfCandidateStale(isCurrent);
     } catch (error) {
       await this.#rollbackCandidate(
         activatedSources,
+        activatedConsumers,
+        addedConsumers,
         addedEdgeKeys,
         addedNodes,
         configuredNodes,
       );
       if (error === STALE_CANDIDATE) return false;
       throw error;
+    }
+
+    let firstCleanupError = null;
+    for (const { element } of removedConsumers) {
+      try {
+        await element._close();
+      } catch (error) {
+        firstCleanupError ??= error;
+      } finally {
+        element._clearAudioOwner(this.#owner);
+      }
     }
 
     const candidateEdgeKeys = new Set(
@@ -181,7 +219,6 @@ export class AudioGraphRuntime {
     }
 
     this.#plan = candidatePlan;
-    let firstCleanupError = null;
     const removedNodes = [...previousPlan.nodes]
       .reverse()
       .filter(({ element }) => !candidateElements.has(element));
@@ -261,7 +298,8 @@ export class AudioGraphRuntime {
       return;
     }
 
-    const activated = [];
+    const activatedSources = [];
+    const activatedConsumers = [];
     try {
       this.#initialize();
       // A prior failed attempt may have released edges while retaining reusable nodes.
@@ -272,7 +310,7 @@ export class AudioGraphRuntime {
       for (const { element } of this.#plan.sources) {
         this.#throwIfTerminalRequested();
         // Include the current source so a partially acquired resource is also released.
-        activated.push(element);
+        activatedSources.push(element);
         await element._activate(this.#context);
         this.#throwIfTerminalRequested();
         this.#captureActivatedNode(element);
@@ -281,10 +319,16 @@ export class AudioGraphRuntime {
         await element._connected();
         this.#throwIfTerminalRequested();
       }
+      for (const consumer of this.#consumers(this.#plan)) {
+        this.#throwIfTerminalRequested();
+        activatedConsumers.push(consumer.element);
+        await consumer.element._activate(this.#consumerStream(consumer));
+        this.#throwIfTerminalRequested();
+      }
       this.#throwIfTerminalRequested();
       this.#state = "running";
     } catch (error) {
-      await this.#rollback(activated);
+      await this.#rollback(activatedSources, activatedConsumers);
       throw error;
     }
   }
@@ -293,6 +337,13 @@ export class AudioGraphRuntime {
     if (this.#resumePromise !== null) await this.#resumePromise;
 
     let firstError = null;
+    for (const { element } of [...this.#consumers(this.#plan)].reverse()) {
+      try {
+        await element._suspend();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
     for (const { element } of [...this.#plan.sources].reverse()) {
       try {
         await element._suspend();
@@ -321,6 +372,15 @@ export class AudioGraphRuntime {
     }
 
     let firstError = null;
+    for (const { element } of [...this.#consumers(this.#plan)].reverse()) {
+      try {
+        await element._close();
+      } catch (error) {
+        firstError ??= error;
+      } finally {
+        element._clearAudioOwner(this.#owner);
+      }
+    }
     for (const { element } of [...this.#plan.sources].reverse()) {
       try {
         await element._close();
@@ -356,11 +416,17 @@ export class AudioGraphRuntime {
           this.#createAndAttachNode(element);
         }
       }
+      for (const { element } of this.#consumers(this.#plan)) {
+        element._setAudioOwner(this.#owner);
+      }
       this.#applyAvailableEdges(this.#plan);
       this.#initialized = true;
     } catch (error) {
       this.#disconnectGraph();
       this.#releaseNodes();
+      for (const { element } of this.#consumers(this.#plan)) {
+        element._clearAudioOwner(this.#owner);
+      }
       throw error;
     }
   }
@@ -454,10 +520,20 @@ export class AudioGraphRuntime {
 
   async #rollbackCandidate(
     activatedSources,
+    activatedConsumers,
+    addedConsumers,
     addedEdgeKeys,
     addedNodes,
     configuredNodes,
   ) {
+    for (const element of [...activatedConsumers].reverse()) {
+      try {
+        if (this.#terminalRequested) await element._close();
+        else await element._rollbackAudioCandidate();
+      } catch {
+        // Candidate cleanup preserves the reconciliation error reported to the owner.
+      }
+    }
     for (const element of [...activatedSources].reverse()) {
       try {
         if (this.#terminalRequested) await element._close();
@@ -465,6 +541,9 @@ export class AudioGraphRuntime {
       } catch {
         // Candidate cleanup preserves the reconciliation error reported to the owner.
       }
+    }
+    for (const { element } of [...addedConsumers].reverse()) {
+      element._clearAudioOwner(this.#owner);
     }
     for (const key of [...addedEdgeKeys].reverse()) {
       const edge = this.#appliedEdges.get(key);
@@ -480,8 +559,15 @@ export class AudioGraphRuntime {
     }
   }
 
-  async #rollback(activated) {
-    for (const element of [...activated].reverse()) {
+  async #rollback(activatedSources, activatedConsumers) {
+    for (const element of [...activatedConsumers].reverse()) {
+      try {
+        await element._suspend();
+      } catch {
+        // Rollback preserves the activation failure reported to the caller.
+      }
+    }
+    for (const element of [...activatedSources].reverse()) {
       try {
         await element._suspend();
       } catch {
@@ -514,6 +600,21 @@ export class AudioGraphRuntime {
 
   #throwIfCandidateStale(isCurrent) {
     if (!isCurrent()) throw STALE_CANDIDATE;
+  }
+
+  #consumers(plan) {
+    return plan.consumers ?? [];
+  }
+
+  #consumerStream({ output }) {
+    const stream = this.#nodes.get(output)?.stream;
+    if (stream === null || stream === undefined) {
+      throw new DOMException(
+        "Audio stream output is not attached",
+        "InvalidStateError",
+      );
+    }
+    return stream;
   }
 
   #releaseNodes() {

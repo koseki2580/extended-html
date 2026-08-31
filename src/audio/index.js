@@ -3,6 +3,8 @@ import { AudioInputMicElement } from "./audio-input-mic.js";
 import { AudioInputFileElement } from "./audio-input-file.js";
 import { AudioBiquadFilterElement } from "./audio-biquad-filter.js";
 import { AudioOutputElement } from "./audio-output.js";
+import { AudioStreamOutputElement } from "./audio-stream-output.js";
+import { MediaRecorderElement } from "./media-recorder.js";
 
 const AUDIO_ELEMENTS = [
   ["audio-context", AudioContextElement],
@@ -10,6 +12,8 @@ const AUDIO_ELEMENTS = [
   ["audio-input-file", AudioInputFileElement],
   ["audio-biquad-filter", AudioBiquadFilterElement],
   ["audio-output", AudioOutputElement],
+  ["audio-stream-output", AudioStreamOutputElement],
+  ["media-recorder", MediaRecorderElement],
 ];
 
 for (const [name, constructor] of AUDIO_ELEMENTS) {

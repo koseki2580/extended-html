@@ -66,6 +66,47 @@ describe("buildAudioGraphPlan", () => {
     assertEqual(plan.nodes[2].role, "output", "output role");
     assertEqual(plan.nodes[2].rootSource, plan.nodes[0].element, "root source is retained");
     assertEqual(edgeLabels(plan.edges).join(","), "mic->filter,filter->out", "nested nodes connect serially");
+    assertEqual(plan.consumers.length, 0, "graph has no stream consumers");
+  });
+
+  it("plans a stream output and its recorder without making the recorder an audio node", () => {
+    const context = contextFrom(`
+      <audio-context>
+        <audio-input-mic id="mic">
+          <audio-biquad-filter id="filter">
+            <audio-stream-output id="recording">
+              <media-recorder id="recorder"></media-recorder>
+            </audio-stream-output>
+          </audio-biquad-filter>
+        </audio-input-mic>
+      </audio-context>
+    `);
+
+    const plan = buildAudioGraphPlan(context);
+    const recorder = context.querySelector("media-recorder");
+    const streamOutput = context.querySelector("audio-stream-output");
+
+    assertEqual(labels(plan.nodes).join(","), "mic,filter,recording", "recorder is not an audio node");
+    assertEqual(plan.nodes[2].role, "output", "stream output is a graph sink");
+    assertEqual(edgeLabels(plan.edges).join(","), "mic->filter,filter->recording", "stream output receives its parent signal");
+    assertEqual(plan.consumers.length, 1, "one recorder consumer");
+    assertEqual(plan.consumers[0].element, recorder, "consumer element");
+    assertEqual(plan.consumers[0].output, streamOutput, "owning stream output");
+  });
+
+  it("accepts a stream output as a cross-tree to target", () => {
+    const context = contextFrom(`
+      <audio-context>
+        <audio-input-file id="file" to="recording"></audio-input-file>
+        <audio-input-mic id="mic">
+          <audio-stream-output id="recording"><media-recorder></media-recorder></audio-stream-output>
+        </audio-input-mic>
+      </audio-context>
+    `);
+
+    const plan = buildAudioGraphPlan(context);
+
+    assertEqual(edgeLabels(plan.edges).join(","), "mic->recording,file->recording", "sources merge at the stream output");
   });
 
   it("fans a processor out to its direct processor siblings", () => {
@@ -181,6 +222,63 @@ describe("buildAudioGraphPlan", () => {
       DOMException,
       "SyntaxError",
       "<audio-output> cannot declare a non-empty to attribute",
+    );
+  });
+
+  it("requires exactly one direct recorder under every stream output", () => {
+    const missing = contextFrom(`
+      <audio-context><audio-input-mic><audio-stream-output></audio-stream-output></audio-input-mic></audio-context>
+    `);
+    const duplicate = contextFrom(`
+      <audio-context><audio-input-mic><audio-stream-output><media-recorder></media-recorder><media-recorder></media-recorder></audio-stream-output></audio-input-mic></audio-context>
+    `);
+
+    for (const [label, context] of [["missing recorder", missing], ["duplicate recorder", duplicate]]) {
+      assertThrows(
+        () => buildAudioGraphPlan(context),
+        label,
+        DOMException,
+        "SyntaxError",
+        "<audio-stream-output> must contain exactly one direct <media-recorder> child",
+      );
+    }
+  });
+
+  it("rejects a recorder outside a stream output", () => {
+    const context = contextFrom(`
+      <audio-context><audio-input-mic><audio-biquad-filter><media-recorder></media-recorder></audio-biquad-filter></audio-input-mic></audio-context>
+    `);
+
+    assertThrows(
+      () => buildAudioGraphPlan(context),
+      "wrong recorder parent",
+      DOMException,
+      "SyntaxError",
+      "<media-recorder> must be a direct child of <audio-stream-output>",
+    );
+  });
+
+  it("rejects audio graph children and non-empty to on a stream output", () => {
+    const child = contextFrom(`
+      <audio-context><audio-input-mic><audio-stream-output><media-recorder></media-recorder><audio-output></audio-output></audio-stream-output></audio-input-mic></audio-context>
+    `);
+    const target = contextFrom(`
+      <audio-context><audio-input-file><audio-stream-output to="filter"><media-recorder></media-recorder></audio-stream-output></audio-input-file><audio-input-mic><audio-biquad-filter id="filter"></audio-biquad-filter></audio-input-mic></audio-context>
+    `);
+
+    assertThrows(
+      () => buildAudioGraphPlan(child),
+      "stream output child",
+      DOMException,
+      "SyntaxError",
+      "<audio-stream-output> cannot contain audio graph elements",
+    );
+    assertThrows(
+      () => buildAudioGraphPlan(target),
+      "stream output to",
+      DOMException,
+      "SyntaxError",
+      "<audio-stream-output> cannot declare a non-empty to attribute",
     );
   });
 

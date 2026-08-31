@@ -97,6 +97,21 @@ describe("dispatchAudioEvent", () => {
 
     assertEqual(received.detail.metadata.contextId, null, "empty owner ID is absent");
   });
+
+  it("merges documented event-specific metadata into the identity envelope", () => {
+    const element = createElement();
+    let received;
+    element.addEventListener("ready", (event) => {
+      received = event;
+    });
+
+    dispatchAudioEvent(element, "ready", { chunk: true }, { id: "audio" }, {
+      timecode: 42,
+    });
+
+    assertEqual(received.detail.metadata.contextId, "audio", "identity metadata remains");
+    assertEqual(received.detail.metadata.timecode, 42, "event metadata is added");
+  });
 });
 
 describe("AudioEventTargetElement handlers", () => {
