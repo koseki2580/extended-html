@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="extended-htmlのWebSocketとAudioカスタムエレメントを使うための日本語ガイドです。"
+      content="extended-htmlのWebSocket、EventSource、Audioカスタムエレメントを使うための日本語ガイドです。"
     />
     <title>日本語ユーザーガイド · extended-html</title>
     <link rel="alternate" hreflang="en" href="../en/" />
@@ -31,6 +31,7 @@
             <li><a href="#api">API一覧</a></li>
             <li><a href="#examples">サンプル</a></li>
             <li><a href="#audio-context">Audio graph</a></li>
+            <li><a href="#event-source">Server-Sent Events</a></li>
           </ul>
           <div class="guide-footer">
             <a class="language-link" href="../en/" lang="en">Read in English</a>
@@ -44,8 +45,9 @@
           <p class="eyebrow">日本語ユーザーガイド</p>
           <h1>ブラウザAPIをHTMLで使う</h1>
           <p class="guide-intro">
-            extended-htmlはWebSocket用の<code>&lt;web-socket&gt;</code>と、宣言的なAudio graph用の
-            <code>&lt;audio-context&gt;</code>を提供します。どちらも標準JavaScriptモジュールだけで動作し、
+            extended-htmlはWebSocket用の<code>&lt;web-socket&gt;</code>、Server-Sent Events用の
+            <code>&lt;event-source&gt;</code>と、宣言的なAudio graph用の
+            <code>&lt;audio-context&gt;</code>を提供します。いずれも標準JavaScriptモジュールだけで動作し、
             フレームワークやビルドは不要です。
           </p>
         </header>
@@ -315,6 +317,39 @@ outputButton.addEventListener("click", async () =&gt; {
             microphone constraintsは今後の対象です。
           </p>
           <a class="example-link" href="../../examples/audio-context/">Audioサンプル</a>
+        </section>
+
+        <section class="guide-section" id="event-source">
+          <p class="eyebrow">11 · Server-Sent Events</p>
+          <h2>server streamを要素のeventとして受信する</h2>
+          <p>
+            <code>&lt;event-source&gt;</code>は標準の<code>EventSource</code>をラップします。
+            <code>auto</code>または<code>open()</code>で開始し、<code>close()</code>で停止します。
+            server指定のretry時間とLast-Event-IDを含む再接続はnative EventSourceが管理します。
+          </p>
+          <pre class="code-block"><code>&lt;event-source
+  url="https://sse.dev/test"
+  auto
+  onmessage="OnSseMessage(event)"
+&gt;&lt;/event-source&gt;
+
+&lt;script&gt;
+  globalThis.OnSseMessage = (event) =&gt; {
+    console.log(event.detail.data);
+    console.log(event.detail.metadata.lastEventId);
+    console.log(event.detail.metadata.transport);
+  };
+&lt;/script&gt;</code></pre>
+          <p>
+            <code>background</code>を付けると専用module Workerを使います。Worker起動はstrictで、
+            <code>fallback</code>を指定した場合だけ初期化中にmainへ切り替えます。
+            eventは<code>open</code>、<code>message</code>、<code>error</code>です。
+            native EventSourceにclose eventはないため、このwrapperも独自には追加しません。
+          </p>
+          <div class="sample-links" aria-label="EventSourceサンプル">
+            <a class="example-link" href="../../examples/event-source/">Mainサンプル</a>
+            <a class="example-link" href="../../examples/event-source/background.html">Workerサンプル</a>
+          </div>
         </section>
       </main>
     </div>

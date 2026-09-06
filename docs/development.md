@@ -2,7 +2,7 @@
 
 This repository uses browser-native ES modules without a runtime build step.
 Development dependencies are limited to test tooling and the local WebSocket
-server used by end-to-end tests.
+and server-sent-event server used by end-to-end tests.
 
 ## Test commands
 
@@ -23,6 +23,8 @@ The aggregate command runs three layers in order:
 The E2E suite verifies text and binary traffic in both directions for main and
 Worker transports. It also verifies explicit close, DOM-removal cleanup,
 reconnect behavior, example navigation, and the narrow-screen layout.
+EventSource coverage verifies main and Worker delivery metadata, native
+Last-Event-ID reconnection, and DOM-removal cleanup against a local SSE endpoint.
 
 ## Examples
 
@@ -30,6 +32,8 @@ Serve the repository root with any static HTTP server, then open `/examples/`.
 The WebSocket pages default to the public `wss://echo.websocket.org` endpoint,
 and the endpoint field remains editable for local or application-specific
 servers.
+EventSource pages default to `https://sse.dev/test` and expose the same editable
+endpoint workflow for any CORS-compatible SSE server.
 
 The Pages site imports modules directly from `src/`, so the examples exercise
 the same source files that package consumers import.

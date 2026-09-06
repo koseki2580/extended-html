@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EventSource main-thread example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="event-source-main">
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main">
+        <header class="hero">
+          <p class="eyebrow">EventSource · Main thread</p>
+          <h1>Stream events<br />with one tag.</h1>
+          <p class="hero-copy">
+            Receive server-sent events through the native main-thread EventSource,
+            including origin and Last-Event-ID metadata.
+          </p>
+        </header>
+        <div class="example-layout">
+          <section class="panel" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Live controls</h2>
+            <div class="field">
+              <label for="endpoint">Endpoint</label>
+              <input id="endpoint" value="https://sse.dev/test" />
+              <p class="field-help">Use an HTTP endpoint that returns text/event-stream.</p>
+            </div>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">state: <strong data-testid="connection-state">Idle</strong></span>
+              <span class="status-pill">transport: <strong data-testid="transport">main</strong></span>
+            </div>
+            <div class="socket-actions">
+              <button class="primary" id="open" type="button">Open connection</button>
+              <button id="close" type="button">Close connection</button>
+              <button id="remove" type="button">Remove element</button>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="events-heading">
+            <h2 id="events-heading">Event log</h2>
+            <ol class="event-log" data-testid="event-log" aria-live="polite"></ol>
+          </section>
+          <section class="panel" aria-labelledby="markup-heading">
+            <h2 id="markup-heading">Markup</h2>
+            <pre class="code-sample"><code>&lt;event-source
+  url="https://sse.dev/test"
+  onopen="OnEventSourceOpen(event)"
+  onmessage="OnEventSourceMessage(event)"
+&gt;&lt;/event-source&gt;</code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+    <event-source id="source" url="https://sse.dev/test"
+      onopen="OnEventSourceOpen(event)"
+      onmessage="OnEventSourceMessage(event)"></event-source>
+    <script type="module" src="../../src/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/event-source-example.js"></script>
+  </body>
+</html>

@@ -54,6 +54,7 @@ const guideSections = [
   "api",
   "examples",
   "audio-context",
+  "event-source",
 ];
 
 for (const guide of [
@@ -135,6 +136,12 @@ for (const guide of [
         audioGuide.locator(`a[href="../../examples/audio-context/${path}"]`),
       ).toHaveCount(1);
     }
+    const eventSourceGuide = page.locator("#event-source");
+    await expect(eventSourceGuide).toContainText("event-source");
+    await expect(eventSourceGuide).toContainText("event.detail.data");
+    await expect(eventSourceGuide).toContainText("Last-Event-ID");
+    await expect(eventSourceGuide).toContainText("background");
+    await expect(eventSourceGuide).toContainText("fallback");
     const apiReference = await page.locator("#api").innerText();
     for (const apiName of [
       "open()",
@@ -162,6 +169,75 @@ test("examples link back to both localized user guides", async ({ page }) => {
     navigation.getByRole("link", { name: "日本語ユーザーガイド" }),
   ).toHaveAttribute("href", /\/guide\/ja\/$/);
 });
+
+const eventSourceExamples = [
+  {
+    label: "EventSource: Main",
+    cardHeading: "EventSource / Main",
+    path: "event-source/",
+    pageId: "event-source-main",
+    heading: "Stream events with one tag.",
+  },
+  {
+    label: "EventSource: Worker",
+    cardHeading: "EventSource / Worker",
+    path: "event-source/background.html",
+    pageId: "event-source-worker",
+    heading: "Same events. Background stream.",
+  },
+];
+
+test("overview and sidebar expose runnable EventSource samples", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/`);
+  const navigation = page.getByRole("navigation", { name: "Examples" });
+
+  for (const example of eventSourceExamples) {
+    await expect(navigation.getByRole("link", { name: example.label })).toHaveAttribute(
+      "href",
+      new RegExp(`/examples/${example.path.replace(".", "\\.")}$`),
+    );
+    await expect(
+      page.locator(".example-card").filter({ hasText: example.cardHeading }),
+    ).toHaveAttribute("href", `./${example.path}`);
+  }
+});
+
+for (const example of eventSourceExamples) {
+  test(`${example.label} is independently runnable`, async ({ page }) => {
+    const errors = watchPageErrors(page);
+    await page.goto(`${server.httpUrl}/examples/${example.path}`);
+
+    await expect(page.locator("body")).toHaveAttribute("data-page", example.pageId);
+    await expect(page.getByRole("heading", { name: example.heading })).toBeVisible();
+    await expect(page.locator("event-source#source")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Open connection" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close connection" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Examples" }).getByRole("link", {
+        name: example.label,
+      }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(errors).toEqual([]);
+  });
+
+  test(`${example.label} sample receives a real server event`, async ({ page }) => {
+    const endpoint = encodeURIComponent(server.sseUrl);
+    const connectionPromise = server.waitForEventSource();
+    await page.goto(`${server.httpUrl}/examples/${example.path}?endpoint=${endpoint}`);
+    await page.getByRole("button", { name: "Open connection" }).click();
+    const connection = await connectionPromise;
+    await expect(page.getByTestId("connection-state")).toHaveText("Open");
+
+    server.sendEvent(connection, { data: "sample payload", id: "sample-1" });
+
+    await expect(page.getByTestId("event-log").locator("li").first()).toContainText(
+      "sample payload",
+    );
+    await expect(page.getByTestId("event-log").locator("li").first()).toContainText(
+      "sample-1",
+    );
+  });
+}
 
 const focusedAudioExamples = [
   {

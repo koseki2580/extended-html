@@ -50,6 +50,26 @@ without changing the methods or events:
 ></web-socket>
 ```
 
+## Use `<event-source>`
+
+Receive server-sent events on the main thread or add `background` to use a
+dedicated Worker. Native EventSource handles reconnection automatically.
+
+```html
+<event-source
+  url="https://sse.dev/test"
+  auto
+  onmessage="OnSseMessage(event)"
+></event-source>
+
+<script type="module">
+  globalThis.OnSseMessage = (event) => {
+    console.log(event.detail.data);
+    console.log(event.detail.metadata.transport);
+  };
+</script>
+```
+
 ## Use `<audio-context>`
 
 Register only the seven Audio elements when the aggregate entry is not needed:

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Learn how to use the extended-html WebSocket and Audio custom elements."
+      content="Learn how to use the extended-html WebSocket, EventSource, and Audio custom elements."
     />
     <title>English User Guide · extended-html</title>
     <link rel="alternate" hreflang="ja" href="../ja/" />
@@ -31,6 +31,7 @@
             <li><a href="#api">API reference</a></li>
             <li><a href="#examples">Examples</a></li>
             <li><a href="#audio-context">Audio graph</a></li>
+            <li><a href="#event-source">Server-sent events</a></li>
           </ul>
           <div class="guide-footer">
             <a class="language-link" href="../ja/" lang="ja">日本語で読む</a>
@@ -44,8 +45,9 @@
           <p class="eyebrow">English User Guide</p>
           <h1>Use browser APIs from HTML</h1>
           <p class="guide-intro">
-            extended-html provides <code>&lt;web-socket&gt;</code> for WebSocket and
-            <code>&lt;audio-context&gt;</code> for declarative Audio graphs. Both use
+            extended-html provides <code>&lt;web-socket&gt;</code> for WebSocket,
+            <code>&lt;event-source&gt;</code> for server-sent events, and
+            <code>&lt;audio-context&gt;</code> for declarative Audio graphs. All use
             standard JavaScript modules and need no framework or build step.
           </p>
         </header>
@@ -329,6 +331,41 @@ outputButton.addEventListener("click", async () =&gt; {
             microphone constraints other than exact device selection are deferred.
           </p>
           <a class="example-link" href="../../examples/audio-context/">Audio example</a>
+        </section>
+
+        <section class="guide-section" id="event-source">
+          <p class="eyebrow">11 · Server-sent events</p>
+          <h2>Receive a server stream as element events</h2>
+          <p>
+            <code>&lt;event-source&gt;</code> wraps native <code>EventSource</code>.
+            Use <code>auto</code> or call <code>open()</code>, then call
+            <code>close()</code> to stop. Native EventSource owns reconnection,
+            including server-provided retry delays and Last-Event-ID.
+          </p>
+          <pre class="code-block"><code>&lt;event-source
+  url="https://sse.dev/test"
+  auto
+  onmessage="OnSseMessage(event)"
+&gt;&lt;/event-source&gt;
+
+&lt;script&gt;
+  globalThis.OnSseMessage = (event) =&gt; {
+    console.log(event.detail.data);
+    console.log(event.detail.metadata.lastEventId);
+    console.log(event.detail.metadata.transport);
+  };
+&lt;/script&gt;</code></pre>
+          <p>
+            Add <code>background</code> for a dedicated module Worker. Worker
+            startup is strict; <code>fallback</code> explicitly permits only an
+            initialization-time switch to main. Events are <code>open</code>,
+            <code>message</code>, and <code>error</code>. Native EventSource has no
+            close event, so the wrapper does not invent one.
+          </p>
+          <div class="sample-links" aria-label="EventSource examples">
+            <a class="example-link" href="../../examples/event-source/">Main example</a>
+            <a class="example-link" href="../../examples/event-source/background.html">Worker example</a>
+          </div>
         </section>
       </main>
     </div>

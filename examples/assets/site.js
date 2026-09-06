@@ -10,6 +10,16 @@ const links = [
     label: "WebSocket: Worker",
     path: "web-socket/background.html",
   },
+  {
+    id: "event-source-main",
+    label: "EventSource: Main",
+    path: "event-source/",
+  },
+  {
+    id: "event-source-worker",
+    label: "EventSource: Worker",
+    path: "event-source/background.html",
+  },
   { id: "audio-context", label: "Audio graph", path: "audio-context/" },
   {
     id: "audio-microphone",

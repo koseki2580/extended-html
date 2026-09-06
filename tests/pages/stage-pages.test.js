@@ -39,14 +39,18 @@ test("stages only the static site and runtime source", async () => {
       "examples/index.html",
       "examples/audio-context/index.html",
       "examples/assets/audio-context-example.js",
+      "examples/assets/event-source-example.js",
       "examples/assets/site.css",
       "examples/assets/site.js",
+      "examples/event-source/index.html",
+      "examples/event-source/background.html",
       "examples/web-socket/index.html",
       "examples/web-socket/background.html",
       "guide/en/index.html",
       "guide/ja/index.html",
       "guide/assets/guide.css",
       "src/index.js",
+      "src/event-source/event-source.worker.js",
       "src/web-socket/web-socket.worker.js",
     ];
 
