@@ -69,3 +69,10 @@
 - **Rule:** In a sample site, “add samples” means independently discoverable and runnable pages unless the user explicitly asks only for snippets.
 - **Why:** Code shown inside an existing page does not expand the navigable sample collection.
 - **Apply-when:** Adding demos, recipes, examples, galleries, or documentation playgrounds.
+
+## Avoid shell-reserved variable names
+
+- **What happened:** A zsh polling loop assigned to the read-only `status` parameter and stopped before checking CI.
+- **Rule:** Prefix shell variables with a task-specific name instead of generic shell terms such as `status`.
+- **Why:** Shell-reserved parameters vary by shell and can turn an otherwise portable command into an immediate failure.
+- **Apply-when:** Writing shell loops, polling commands, or inline automation.
