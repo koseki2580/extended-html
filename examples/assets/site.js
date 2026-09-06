@@ -12,6 +12,21 @@ const links = [
   },
   { id: "audio-context", label: "Audio graph", path: "audio-context/" },
   {
+    id: "audio-microphone",
+    label: "Audio: Microphone",
+    path: "audio-context/microphone.html",
+  },
+  {
+    id: "audio-file-filter",
+    label: "Audio: File filter",
+    path: "audio-context/file-filter.html",
+  },
+  {
+    id: "audio-media-stream",
+    label: "Audio: MediaStream",
+    path: "audio-context/media-stream.html",
+  },
+  {
     id: "guide-en",
     label: "English User Guide",
     href: new URL("guide/en/", siteRoot).href,

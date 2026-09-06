@@ -126,6 +126,15 @@ for (const guide of [
       "href",
       "../../examples/audio-context/",
     );
+    for (const path of [
+      "microphone.html",
+      "file-filter.html",
+      "media-stream.html",
+    ]) {
+      await expect(
+        audioGuide.locator(`a[href="../../examples/audio-context/${path}"]`),
+      ).toHaveCount(1);
+    }
     const apiReference = await page.locator("#api").innerText();
     for (const apiName of [
       "open()",
@@ -152,6 +161,107 @@ test("examples link back to both localized user guides", async ({ page }) => {
   await expect(
     navigation.getByRole("link", { name: "日本語ユーザーガイド" }),
   ).toHaveAttribute("href", /\/guide\/ja\/$/);
+});
+
+const focusedAudioExamples = [
+  {
+    label: "Audio: Microphone",
+    path: "audio-context/microphone.html",
+    pageId: "audio-microphone",
+    heading: "Monitor a microphone.",
+  },
+  {
+    label: "Audio: File filter",
+    path: "audio-context/file-filter.html",
+    pageId: "audio-file-filter",
+    heading: "Filter a generated tone.",
+  },
+  {
+    label: "Audio: MediaStream",
+    path: "audio-context/media-stream.html",
+    pageId: "audio-media-stream",
+    heading: "Use the native MediaStream.",
+  },
+];
+
+test("overview and sidebar expose focused runnable Audio samples", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/`);
+
+  const navigation = page.getByRole("navigation", { name: "Examples" });
+  for (const example of focusedAudioExamples) {
+    await expect(navigation.getByRole("link", { name: example.label })).toHaveAttribute(
+      "href",
+      new RegExp(`/examples/${example.path.replace(".", "\\.")}$`),
+    );
+    await expect(
+      page.locator(".example-card").filter({ hasText: example.label }),
+    ).toHaveAttribute("href", `./${example.path}`);
+  }
+});
+
+for (const example of focusedAudioExamples) {
+  test(`${example.label} is an independently runnable graph`, async ({ page }) => {
+    const errors = watchPageErrors(page);
+    await page.goto(`${server.httpUrl}/examples/${example.path}`);
+
+    await expect(page.locator("body")).toHaveAttribute("data-page", example.pageId);
+    await expect(page.getByRole("heading", { name: example.heading })).toBeVisible();
+    await expect(page.locator("audio-context#audio")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Start audio" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close audio" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Examples" }).getByRole("link", {
+        name: example.label,
+      }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(errors).toEqual([]);
+  });
+}
+
+test("focused MediaStream sample exposes tracks to a standard media element", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/media-stream.html`);
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-state")).toHaveText("Running");
+  await expect(page.getByTestId("stream-state")).toContainText("MediaStream");
+  await expect(page.getByTestId("stream-state")).toContainText("audio track");
+  expect(
+    await page.locator("audio#preview").evaluate((element) => ({
+      muted: element.muted,
+      hasStream: element.srcObject instanceof MediaStream,
+    })),
+  ).toEqual({ muted: true, hasStream: true });
+
+  await page.getByRole("button", { name: "Request data" }).click();
+  await expect(page.getByTestId("chunk-count")).not.toHaveText("0");
+  await page.getByRole("button", { name: "Close audio" }).click();
+  await expect(page.getByRole("link", { name: "Download recording" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("focused microphone and file samples run through the context lifecycle", async ({
+  page,
+}) => {
+  for (const path of ["microphone.html", "file-filter.html"]) {
+    await page.goto(`${server.httpUrl}/examples/audio-context/${path}`);
+    await page.getByRole("button", { name: "Start audio" }).click();
+    await expect(page.getByTestId("audio-state")).toHaveText("Running");
+
+    await page.locator("#frequency").fill("800");
+    await expect(page.locator("audio-biquad-filter")).toHaveAttribute(
+      "frequency",
+      "800",
+    );
+    await page.getByRole("button", { name: "Suspend audio" }).click();
+    await expect(page.getByTestId("audio-state")).toHaveText("Suspended");
+    await page.getByRole("button", { name: "Resume audio" }).click();
+    await expect(page.getByTestId("audio-state")).toHaveText("Running");
+    await page.getByRole("button", { name: "Close audio" }).click();
+    await expect(page.getByTestId("audio-state")).toHaveText("Closed");
+  }
 });
 
 test("examples overview and sidebar navigate to the Audio example", async ({ page }) => {
@@ -554,6 +664,23 @@ for (const width of [375, 768, 1024, 1440]) {
     expect(layout.body).toBeLessThanOrEqual(layout.viewport);
     expect(layout.controlsAreLargeEnough).toBe(true);
     expect(layout.mobileFontSize).toBeGreaterThanOrEqual(16);
+  });
+}
+
+for (const example of focusedAudioExamples) {
+  test(`${example.label} remains usable at 375px`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`${server.httpUrl}/examples/${example.path}`);
+
+    const layout = await page.evaluate(() => ({
+      body: document.body.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+      controlsAreLargeEnough: [...document.querySelectorAll("button")].every(
+        (button) => button.getBoundingClientRect().height >= 44,
+      ),
+    }));
+    expect(layout.body).toBeLessThanOrEqual(layout.viewport);
+    expect(layout.controlsAreLargeEnough).toBe(true);
   });
 }
 

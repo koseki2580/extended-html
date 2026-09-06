@@ -283,6 +283,13 @@ code {
   background: #4ade80;
 }
 
+.sample-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
 .landing-shell {
   width: min(100%, 76rem);
   min-height: 100vh;

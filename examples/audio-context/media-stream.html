@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MediaStream example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="audio-media-stream">
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main">
+        <header class="hero">
+          <p class="eyebrow">Audio · MediaStream sample</p>
+          <h1>Use the native<br />MediaStream.</h1>
+          <p class="hero-copy">Inspect graph output, hand it to standard HTML media, and record it.</p>
+        </header>
+        <div class="example-layout">
+          <section class="panel" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Run the sample</h2>
+            <p class="audio-note" role="note"><strong>Muted preview:</strong> The native audio element receives the stream without playing microphone feedback.</p>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">state: <strong data-testid="audio-state">Suspended</strong></span>
+              <span class="status-pill">recorder: <strong data-testid="recording-state">Inactive</strong></span>
+              <span class="status-pill">chunks: <strong data-testid="chunk-count">0</strong></span>
+            </div>
+            <p data-testid="stream-state" class="field-help">MediaStream available after start</p>
+            <audio class="media-preview" id="preview" controls muted></audio>
+            <a id="download-recording" class="example-link" download="media-stream-recording.webm" hidden>Download recording</a>
+            <p role="alert" class="field-help"></p>
+            <div class="socket-actions" role="group" aria-label="Audio lifecycle">
+              <button class="primary" id="start">Start audio</button>
+              <button id="suspend">Suspend audio</button>
+              <button id="resume">Resume audio</button>
+              <button id="request-data">Request data</button>
+              <button id="close">Close audio</button>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="markup-heading">
+            <h2 id="markup-heading">Markup and native handoff</h2>
+            <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic&gt;
+    &lt;audio-stream-output id="streamOutput"&gt;
+      &lt;media-recorder id="recorder"&gt;&lt;/media-recorder&gt;
+    &lt;/audio-stream-output&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;
+
+await audio.resume();
+preview.srcObject = streamOutput.stream;</code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+    <audio-context id="audio" hidden>
+      <audio-input-mic>
+        <audio-stream-output id="streamOutput">
+          <media-recorder id="recorder"></media-recorder>
+        </audio-stream-output>
+      </audio-input-mic>
+    </audio-context>
+    <script type="module" src="../../src/audio/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/audio-recipe-example.js"></script>
+  </body>
+</html>

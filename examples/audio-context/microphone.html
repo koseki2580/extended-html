@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Microphone monitor example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="audio-microphone">
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main">
+        <header class="hero">
+          <p class="eyebrow">Audio · Focused sample</p>
+          <h1>Monitor a<br />microphone.</h1>
+          <p class="hero-copy">One nested branch connects input, filter, and physical output.</p>
+        </header>
+        <div class="example-layout">
+          <section class="panel" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Run the sample</h2>
+            <p class="audio-note" role="note"><strong>Listening safety:</strong> Use headphones or keep the volume low.</p>
+            <p class="status-pill">state: <strong data-testid="audio-state">Suspended</strong></p>
+            <div class="field">
+              <label for="frequency">High-pass cutoff <output id="frequency-value">120 Hz</output></label>
+              <input id="frequency" type="range" min="20" max="2000" value="120" />
+            </div>
+            <p role="alert" class="field-help"></p>
+            <div class="socket-actions" role="group" aria-label="Audio lifecycle">
+              <button class="primary" id="start">Start audio</button>
+              <button id="suspend">Suspend audio</button>
+              <button id="resume">Resume audio</button>
+              <button id="close">Close audio</button>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="markup-heading">
+            <h2 id="markup-heading">Markup</h2>
+            <pre class="code-sample"><code>&lt;audio-context id="audio"&gt;
+  &lt;audio-input-mic&gt;
+    &lt;audio-biquad-filter type="highpass" frequency="120"&gt;
+      &lt;audio-output&gt;&lt;/audio-output&gt;
+    &lt;/audio-biquad-filter&gt;
+  &lt;/audio-input-mic&gt;
+&lt;/audio-context&gt;</code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+    <audio-context id="audio" hidden>
+      <audio-input-mic>
+        <audio-biquad-filter type="highpass" frequency="120">
+          <audio-output></audio-output>
+        </audio-biquad-filter>
+      </audio-input-mic>
+    </audio-context>
+    <script type="module" src="../../src/audio/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/audio-recipe-example.js"></script>
+  </body>
+</html>
