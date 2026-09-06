@@ -62,3 +62,10 @@
 - **Rule:** When a role can legitimately repeat, scope its locator by accessible name or distinctive user-visible text.
 - **Why:** Semantic roles describe a category, not uniqueness, and pages naturally gain more elements in that category.
 - **Apply-when:** Writing E2E assertions for notes, status regions, buttons, links, or other repeated roles.
+
+## Treat samples as runnable destinations
+
+- **What happened:** Static recipe snippets were added, but the user expected new samples in the examples navigation.
+- **Rule:** In a sample site, “add samples” means independently discoverable and runnable pages unless the user explicitly asks only for snippets.
+- **Why:** Code shown inside an existing page does not expand the navigable sample collection.
+- **Apply-when:** Adding demos, recipes, examples, galleries, or documentation playgrounds.
