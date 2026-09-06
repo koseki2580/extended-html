@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import WebSocket from "ws";
 import { startTestServer } from "./support/test-server.js";
 
-test("serves repository modules and exposes observable WebSocket traffic", async () => {
+test("serves repository modules and exposes observable transport traffic", async () => {
   const server = await startTestServer();
   try {
     const response = await fetch(`${server.httpUrl}/src/index.js`);
@@ -10,6 +10,7 @@ test("serves repository modules and exposes observable WebSocket traffic", async
     const aggregateSource = await response.text();
     expect(aggregateSource).toContain('import "./web-socket/web-socket.js"');
     expect(aggregateSource).toContain('import "./audio/index.js"');
+    expect(aggregateSource).toContain('import "./event-source/event-source.js"');
 
     const audioEntry = await fetch(`${server.httpUrl}/src/audio/index.js`);
     expect(audioEntry.status).toBe(200);

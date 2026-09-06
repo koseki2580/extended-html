@@ -78,12 +78,37 @@ export const startTestServer = async () => {
   const connectionQueue = createQueue();
   const messageQueues = new WeakMap();
   const closeQueues = new WeakMap();
+  const eventSources = new Set();
+  const eventSourceQueue = createQueue();
+  const eventSourceCloseQueues = new WeakMap();
 
   const httpServer = createServer(async (request, response) => {
     try {
       const pathname = decodeURIComponent(
         new URL(request.url, "http://127.0.0.1").pathname,
       );
+      if (pathname === "/events") {
+        response.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+        });
+        response.flushHeaders();
+        const eventSource = {
+          request,
+          response,
+          lastEventId: request.headers["last-event-id"] ?? "",
+        };
+        const closes = createQueue();
+        eventSources.add(eventSource);
+        eventSourceCloseQueues.set(eventSource, closes);
+        request.once("close", () => {
+          eventSources.delete(eventSource);
+          closes.push(undefined);
+        });
+        eventSourceQueue.push(eventSource);
+        return;
+      }
       if (!isAllowedPath(pathname)) {
         response.writeHead(404).end("Not found");
         return;
@@ -153,6 +178,7 @@ export const startTestServer = async () => {
   return {
     httpUrl,
     wsUrl: `ws://127.0.0.1:${address.port}/socket`,
+    sseUrl: `${httpUrl}/events`,
     waitForConnection: () => connectionQueue.next(),
     waitForMessage(connection) {
       return messageQueues.get(connection).next();
@@ -166,7 +192,26 @@ export const startTestServer = async () => {
     close(connection, code = 1000, reason = "server close") {
       connection.close(code, reason);
     },
+    waitForEventSource: () => eventSourceQueue.next(),
+    waitForEventSourceClose(eventSource) {
+      return eventSourceCloseQueues.get(eventSource).next();
+    },
+    sendEvent(
+      eventSource,
+      { data, event = null, id = null, retry = null },
+    ) {
+      const lines = [];
+      if (event !== null) lines.push(`event: ${event}`);
+      if (id !== null) lines.push(`id: ${id}`);
+      if (retry !== null) lines.push(`retry: ${retry}`);
+      for (const line of String(data).split(/\r?\n/)) lines.push(`data: ${line}`);
+      eventSource.response.write(`${lines.join("\n")}\n\n`);
+    },
+    closeEventSource(eventSource) {
+      eventSource.response.end();
+    },
     async stop() {
+      for (const eventSource of eventSources) eventSource.response.end();
       for (const connection of connections) connection.terminate();
       await new Promise((resolve) => webSocketServer.close(resolve));
       await new Promise((resolve) => httpServer.close(resolve));

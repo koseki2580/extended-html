@@ -6,14 +6,15 @@
   "exports": {
     ".": "./src/index.js",
     "./web-socket": "./src/web-socket/web-socket.js",
-    "./audio-context": "./src/audio/index.js"
+    "./audio-context": "./src/audio/index.js",
+    "./event-source": "./src/event-source/event-source.js"
   },
   "files": [
     "src"
   ],
   "scripts": {
     "test": "npm run test:unit && npm run test:pages && npm run test:e2e",
-    "test:unit": "web-test-runner \"tests/core/**/*.test.js\" \"tests/web-socket/**/*.test.js\" \"tests/audio/**/*.test.js\" --node-resolve --static-logging",
+    "test:unit": "web-test-runner \"tests/core/**/*.test.js\" \"tests/web-socket/**/*.test.js\" \"tests/audio/**/*.test.js\" \"tests/event-source/**/*.test.js\" --node-resolve --static-logging",
     "test:pages": "node --test tests/pages/*.test.js",
     "test:e2e": "playwright test",
     "pages:stage": "node scripts/stage-pages.js"
