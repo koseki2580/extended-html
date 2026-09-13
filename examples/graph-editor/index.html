@@ -25,26 +25,25 @@
         </header>
 
         <div class="example-layout">
-          <section class="panel" aria-labelledby="lifecycle-heading">
-            <h2 id="lifecycle-heading">Run the edited graph</h2>
-            <p class="audio-note" role="note">
-              <strong>Microphone permission:</strong> Starting uses your selected
-              microphone. Keep speaker volume low to avoid feedback.
+          <section class="panel graph-example-panel" aria-labelledby="editor-heading">
+            <div class="graph-example-heading">
+              <div>
+                <p class="eyebrow">Visual workflow</p>
+                <h2 id="editor-heading">Shape the signal path</h2>
+                <p class="field-help">
+                  The canvas edits the custom elements below it. Your declarative
+                  HTML remains the source of truth.
+                </p>
+              </div>
+              <ol class="graph-steps" aria-label="How to edit the graph">
+                <li><span>1</span>Select a node</li>
+                <li><span>2</span>Edit or connect</li>
+                <li><span>3</span>Run the graph</li>
+              </ol>
+            </div>
+            <p class="graph-scroll-hint">
+              Scroll the canvas horizontally to follow long signal paths.
             </p>
-            <div class="socket-status" aria-live="polite">
-              <span class="status-pill">audio: <strong data-testid="graph-audio-state">Suspended</strong></span>
-              <span class="status-pill">last edit: <strong data-testid="last-operation">none</strong></span>
-              <span class="status-pill">actions: <strong data-testid="action-count">0</strong></span>
-            </div>
-            <div class="socket-actions" role="group" aria-label="Graph audio lifecycle">
-              <button class="primary" id="start" type="button">Start audio graph</button>
-              <button id="request-data" type="button" disabled>Request recorder data</button>
-              <button id="close" type="button">Close audio graph</button>
-            </div>
-            <p id="graph-error" class="field-help" role="alert"></p>
-          </section>
-
-          <section class="panel graph-example-panel" aria-label="Interactive graph editor">
             <graph-editor id="editor">
               <audio-context id="audio">
                 <audio-input-mic id="mic">
@@ -67,6 +66,25 @@
                 handler="SaveChunk(event)"
               ></graph-action>
             </graph-editor>
+          </section>
+
+          <section class="panel" aria-labelledby="lifecycle-heading">
+            <h2 id="lifecycle-heading">Run the edited graph</h2>
+            <p class="audio-note" role="note">
+              <strong>Microphone permission:</strong> Starting uses your selected
+              microphone. Keep speaker volume low to avoid feedback.
+            </p>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">audio: <strong data-testid="graph-audio-state">Suspended</strong></span>
+              <span class="status-pill">last edit: <strong data-testid="last-operation">none</strong></span>
+              <span class="status-pill">actions: <strong data-testid="action-count">0</strong></span>
+            </div>
+            <div class="socket-actions" role="group" aria-label="Graph audio lifecycle">
+              <button class="primary" id="start" type="button">Start audio graph</button>
+              <button id="request-data" type="button" disabled>Request recorder data</button>
+              <button id="close" type="button">Close audio graph</button>
+            </div>
+            <p id="graph-error" class="field-help" role="alert"></p>
           </section>
 
           <section class="panel" aria-labelledby="action-heading">

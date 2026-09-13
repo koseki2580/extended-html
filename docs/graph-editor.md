@@ -48,6 +48,18 @@ The From/To controls provide a keyboard-accessible equivalent to port dragging.
 All graph changes update the original light DOM. `serialize()` returns that
 current HTML.
 
+The editor owns a self-contained dark color scheme so its native controls stay
+readable when it is embedded in either a light or dark document. Host pages may
+customize its published `--graph-*` color properties, but should provide a
+complete foreground/background pair when overriding them. Unpositioned nodes
+are initially arranged from left to right by graph dependency; saved
+`data-graph-x` and `data-graph-y` coordinates continue to take precedence.
+
+At narrow container widths the palette and inspector move around the workspace
+instead of shrinking the graph controls. The canvas itself remains scrollable,
+all interactive controls provide at least a 44 by 44 CSS-pixel target, and the
+same connect/disconnect operation remains available without dragging.
+
 The public mutation methods are:
 
 | Method | Result |

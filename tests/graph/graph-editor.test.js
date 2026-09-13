@@ -50,7 +50,11 @@ describe("graph-editor", () => {
     assert(shadow.querySelector('[data-node-id="mic"]'), "audio node is rendered");
     assert(shadow.querySelector('[data-node-id="chunk"]'), "event node is rendered");
     assert(shadow.querySelector('[data-node-id="save"]'), "action node is rendered");
-    assertEqual(shadow.querySelectorAll("svg path").length, 6, "all edge types are drawn");
+    assertEqual(
+      shadow.querySelectorAll("path[data-edge-index]").length,
+      6,
+      "all edge types are drawn",
+    );
     assert(shadow.querySelector('[aria-label="Graph node inspector"]'), "inspector is labelled");
   });
 
@@ -185,6 +189,7 @@ describe("graph-editor", () => {
       detail = event.detail;
     });
     const card = editor.shadowRoot.querySelector('[data-node-id="mic"]');
+    const origin = { x: card.offsetLeft, y: card.offsetTop };
     const path = editor.shadowRoot.querySelector('[data-edge-from="mic"]');
     const previousPath = path.getAttribute("d");
     card
@@ -196,8 +201,16 @@ describe("graph-editor", () => {
     await waitForLayout();
 
     const mic = editor.querySelector("#mic");
-    assertEqual(mic.dataset.graphX, "48", "horizontal delta is persisted from its visible position");
-    assertEqual(mic.dataset.graphY, "76", "vertical delta is persisted from its visible position");
+    assertEqual(
+      mic.dataset.graphX,
+      String(origin.x + 24),
+      "horizontal delta is persisted from its visible position",
+    );
+    assertEqual(
+      mic.dataset.graphY,
+      String(origin.y + 48),
+      "vertical delta is persisted from its visible position",
+    );
     assertEqual(detail.metadata.operation, "move", "movement metadata is included");
     assert(
       editor.shadowRoot.querySelector('[data-edge-from="mic"]').getAttribute("d") !== previousPath,

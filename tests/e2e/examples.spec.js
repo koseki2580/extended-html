@@ -367,6 +367,7 @@ test("Graph editor sample keeps visual edits and declarative HTML synchronized",
   await expect(editor.locator('[data-node-id="mic"]')).toBeVisible();
   await expect(editor.locator('[data-node-id="chunk-ready"]')).toBeVisible();
   await expect(editor.locator('[data-node-id="save-chunk"]')).toBeVisible();
+  await expect(page.getByTestId("serialized-markup")).toContainText("<audio-context");
 
   await editor.locator('[data-node-id="filter"] .node-select').click();
   const frequency = editor.locator('[data-property="frequency"]');
@@ -400,6 +401,74 @@ test("Graph editor sample keeps visual edits and declarative HTML synchronized",
   expect(errors).toEqual([]);
 });
 
+test("Graph editor controls stay readable in a dark page and the default layout follows the DAG", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${server.httpUrl}/examples/graph-editor/`);
+
+  const audit = await page.locator("graph-editor#editor").evaluate((editor) => {
+    const root = editor.shadowRoot;
+    const parseColor = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const luminance = (value) => {
+      const channels = parseColor(value).map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    };
+    const contrast = (element) => {
+      const style = getComputedStyle(element);
+      const foreground = luminance(style.color);
+      const background = luminance(style.backgroundColor);
+      return (Math.max(foreground, background) + 0.05)
+        / (Math.min(foreground, background) + 0.05);
+    };
+    const controls = [...root.querySelectorAll(
+      ".palette button, .toolbar button, .toolbar select, .node-select, .drag-handle, .port",
+    )];
+    const cards = new Map(
+      [...root.querySelectorAll("[data-node-id]")].map((card) => [
+        card.dataset.nodeId,
+        card.getBoundingClientRect(),
+      ]),
+    );
+    const cardEntries = [...cards.entries()];
+    const overlaps = cardEntries.flatMap(([leftId, left], index) =>
+      cardEntries.slice(index + 1).flatMap(([rightId, right]) => {
+        const intersects = left.left < right.right && left.right > right.left
+          && left.top < right.bottom && left.bottom > right.top;
+        return intersects ? [`${leftId}:${rightId}`] : [];
+      }),
+    );
+    const edgesMoveForward = [...root.querySelectorAll("path[data-edge-from]")].every(
+      (path) => cards.get(path.dataset.edgeTo).left > cards.get(path.dataset.edgeFrom).left,
+    );
+
+    return {
+      lowContrast: controls
+        .filter((control) => contrast(control) < 4.5)
+        .map((control) => control.getAttribute("aria-label") || control.textContent.trim()),
+      undersized: controls
+        .filter((control) => {
+          const box = control.getBoundingClientRect();
+          return box.width < 44 || box.height < 44;
+        })
+        .map((control) => control.getAttribute("aria-label") || control.textContent.trim()),
+      edgesMoveForward,
+      overlaps,
+    };
+  });
+
+  expect(audit.lowContrast).toEqual([]);
+  expect(audit.undersized).toEqual([]);
+  expect(audit.edgesMoveForward).toBe(true);
+  expect(audit.overlaps).toEqual([]);
+});
+
 test("overview and sidebar expose WebRTC and Graph editor samples", async ({ page }) => {
   await page.goto(`${server.httpUrl}/examples/`);
   const navigation = page.getByRole("navigation", { name: "Examples" });
@@ -431,7 +500,7 @@ test("Graph editor sample routes recorder data through graph-event and graph-act
   expect(errors).toEqual([]);
 });
 
-for (const width of [375, 1280]) {
+for (const width of [375, 768, 1024, 1440]) {
   test(`Graph editor sample remains usable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${server.httpUrl}/examples/graph-editor/`);
@@ -442,6 +511,16 @@ for (const width of [375, 1280]) {
     await expect(editor.locator('[aria-label="Graph node inspector"]')).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    expect(
+      await editor.evaluate((element) => {
+        const root = element.shadowRoot;
+        return [...root.querySelectorAll("[data-node-id]")].every((node) => {
+          const box = node.getBoundingClientRect();
+          const canvas = root.querySelector(".canvas").getBoundingClientRect();
+          return box.width > 0 && box.height > 0 && box.top >= canvas.top;
+        });
+      }),
     ).toBe(true);
   });
 }

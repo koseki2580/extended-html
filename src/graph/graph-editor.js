@@ -9,6 +9,85 @@ const escapeHtml = (value) =>
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 
+const KIND_LABELS = {
+  source: "Source",
+  processor: "Processor",
+  output: "Output",
+  consumer: "Consumer",
+  event: "Event",
+  action: "Action",
+};
+
+const iconMarkup = (kind) => {
+  const path = {
+    source: '<path d="M4 12h3l2-5 4 10 2-5h5"/>',
+    processor: '<path d="M4 7h8m4 0h4M4 17h3m4 0h9M12 4v6M7 14v6"/>',
+    output: '<path d="M5 10v4h4l5 4V6L9 10H5Zm12-1c1 1 1.5 2 1.5 3S18 14 17 15"/>',
+    consumer: '<path d="M5 5h14v14H5zM9 9h6v6H9z"/>',
+    event: '<path d="m13 3-7 10h6l-1 8 7-11h-6l1-7Z"/>',
+    action: '<path d="m8 5 11 7-11 7V5Z"/>',
+  }[kind] ?? '<circle cx="12" cy="12" r="7"/>';
+  return `<svg aria-hidden="true" viewBox="0 0 24 24">${path}</svg>`;
+};
+
+// Arrange only unsaved positions. Persisted coordinates always remain the source of truth.
+const layoutGraph = (nodes, edges) => {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const incoming = new Map(nodes.map((node) => [node.id, []]));
+  const outgoing = new Map(nodes.map((node) => [node.id, []]));
+  const indegree = new Map(nodes.map((node) => [node.id, 0]));
+
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.from.id) || !nodeIds.has(edge.to.id)) continue;
+    incoming.get(edge.to.id).push(edge.from.id);
+    outgoing.get(edge.from.id).push(edge.to.id);
+    indegree.set(edge.to.id, indegree.get(edge.to.id) + 1);
+  }
+
+  const levels = new Map(nodes.map((node) => [node.id, 0]));
+  const queue = nodes.filter((node) => indegree.get(node.id) === 0).map((node) => node.id);
+  const visited = new Set();
+  while (queue.length > 0) {
+    const id = queue.shift();
+    visited.add(id);
+    for (const targetId of outgoing.get(id)) {
+      levels.set(targetId, Math.max(levels.get(targetId), levels.get(id) + 1));
+      indegree.set(targetId, indegree.get(targetId) - 1);
+      if (indegree.get(targetId) === 0) queue.push(targetId);
+    }
+  }
+
+  // A registered adapter should expose a DAG. This fallback keeps malformed custom adapters visible.
+  let fallbackLevel = Math.max(0, ...levels.values()) + 1;
+  for (const node of nodes) {
+    if (!visited.has(node.id)) levels.set(node.id, fallbackLevel++);
+  }
+
+  const lanes = new Map();
+  const occupiedByLevel = new Map();
+  for (const node of nodes) {
+    const level = levels.get(node.id);
+    const occupied = occupiedByLevel.get(level) ?? new Set();
+    const predecessorLanes = incoming.get(node.id)
+      .map((id) => lanes.get(id))
+      .filter(Number.isFinite);
+    let lane = predecessorLanes[0] ?? 0;
+    while (occupied.has(lane)) lane += 1;
+    lanes.set(node.id, lane);
+    occupied.add(lane);
+    occupiedByLevel.set(level, occupied);
+  }
+
+  const positions = new Map();
+  for (const node of nodes) {
+    positions.set(node.id, {
+      x: node.position.x ?? 24 + levels.get(node.id) * 176,
+      y: node.position.y ?? 24 + lanes.get(node.id) * 168,
+    });
+  }
+  return positions;
+};
+
 const orchestrationDescriptor = (element, kind, properties) => ({
   element,
   id: element.id,
@@ -177,31 +256,55 @@ export class GraphEditorElement extends HTMLElement {
         this.#selectedId = null;
       }
       const selected = this.#model.nodes.find((node) => node.id === this.#selectedId) ?? null;
+      const positions = layoutGraph(this.#model.nodes, this.#model.edges);
+      const canvasWidth = Math.max(
+        720,
+        ...[...positions.values()].map(({ x }) => x + 184),
+      );
+      const canvasHeight = Math.max(
+        460,
+        ...[...positions.values()].map(({ y }) => y + 168),
+      );
       this.shadowRoot.innerHTML = `
         <style>${graphEditorStyles}</style>
         <div class="layout">
           <aside class="panel palette" aria-label="Graph node palette">
-            <h2>Nodes</h2>
+            <div class="panel-heading">
+              <h2>Nodes</h2>
+              <p>Add building blocks</p>
+            </div>
             <div class="palette-list">
               ${this.#adapter.nodeTypes.map((type) => `
-                <button type="button" data-add-node="${escapeHtml(type.localName)}"
-                  data-node-kind="${escapeHtml(type.kind)}">Add ${escapeHtml(type.label)}</button>
+                <button type="button" aria-label="Add ${escapeHtml(type.label)}" data-add-node="${escapeHtml(type.localName)}"
+                  data-node-kind="${escapeHtml(type.kind)}">
+                  <span class="palette-icon">${iconMarkup(type.kind)}</span>
+                  <span><strong>${escapeHtml(type.label)}</strong><small>${escapeHtml(KIND_LABELS[type.kind] ?? type.kind)}</small></span>
+                </button>
               `).join("")}
-              <button type="button" data-action="add-event" ${selected?.events.length ? "" : "disabled"}>Add Event</button>
-              <button type="button" data-action="add-action" ${selected?.kind === "event" ? "" : "disabled"}>Add Action</button>
+              <button type="button" aria-label="Add Event" data-action="add-event" data-node-kind="event" ${selected?.events.length ? "" : "disabled"}>
+                <span class="palette-icon">${iconMarkup("event")}</span><span><strong>Event</strong><small>From selected node</small></span>
+              </button>
+              <button type="button" aria-label="Add Action" data-action="add-action" data-node-kind="action" ${selected?.kind === "event" ? "" : "disabled"}>
+                <span class="palette-icon">${iconMarkup("action")}</span><span><strong>Action</strong><small>From selected event</small></span>
+              </button>
             </div>
           </aside>
           <section class="workspace" aria-label="Graph canvas">
             ${this.#toolbarMarkup()}
-            <div class="canvas">
-              <svg aria-hidden="true" preserveAspectRatio="none">
-                ${this.#model.edges.map((edge, index) => `<path data-edge-index="${index}" data-edge-from="${escapeHtml(edge.from.id)}" data-edge-to="${escapeHtml(edge.to.id)}" data-kind="${escapeHtml(edge.kind)}" d=""></path>`).join("")}
-              </svg>
-              ${this.#model.nodes.map((node, index) => this.#nodeMarkup(node, index)).join("")}
+            <div class="canvas" tabindex="0" aria-label="Scrollable graph drawing area">
+              <div class="canvas-surface" style="--canvas-width:${canvasWidth}px;--canvas-height:${canvasHeight}px">
+                <svg aria-hidden="true" preserveAspectRatio="none">
+                  ${this.#model.edges.map((edge, index) => `<path data-edge-index="${index}" data-edge-from="${escapeHtml(edge.from.id)}" data-edge-to="${escapeHtml(edge.to.id)}" data-kind="${escapeHtml(edge.kind)}" d=""></path>`).join("")}
+                </svg>
+                ${this.#model.nodes.map((node) => this.#nodeMarkup(node, positions.get(node.id))).join("")}
+              </div>
             </div>
           </section>
           <aside class="panel inspector" aria-label="Graph node inspector">
-            <h2>Inspector</h2>
+            <div class="panel-heading">
+              <h2>Inspector</h2>
+              <p>Configure selection</p>
+            </div>
             ${this.#inspectorMarkup(selected)}
           </aside>
         </div>
@@ -228,28 +331,38 @@ export class GraphEditorElement extends HTMLElement {
       .join("");
     return `
       <div class="toolbar" aria-label="Keyboard edge controls">
-        <label>From<select data-connect-from><option value="">Choose node</option>${options(this.#connectFromId)}</select></label>
-        <label>To<select data-connect-to><option value="">Choose node</option>${options(this.#connectToId)}</select></label>
-        <button type="button" data-action="connect">Connect</button>
-        <button type="button" data-action="disconnect">Disconnect</button>
+        <div class="toolbar-heading"><strong>Connect nodes</strong><small>Keyboard alternative to dragging ports</small></div>
+        <label for="graph-connect-from">From</label>
+        <select id="graph-connect-from" data-connect-from><option value="">Choose source</option>${options(this.#connectFromId)}</select>
+        <span class="toolbar-arrow" aria-hidden="true">→</span>
+        <label for="graph-connect-to">To</label>
+        <select id="graph-connect-to" data-connect-to><option value="">Choose target</option>${options(this.#connectToId)}</select>
+        <div class="toolbar-actions">
+          <button type="button" data-action="connect">Connect</button>
+          <button type="button" data-action="disconnect">Disconnect</button>
+        </div>
       </div>
     `;
   }
 
-  #nodeMarkup(node, index) {
-    const x = node.position.x ?? 24 + (index % 3) * 176;
-    const y = node.position.y ?? 28 + Math.floor(index / 3) * 112;
+  #nodeMarkup(node, position) {
     return `
       <div class="node" data-node-id="${escapeHtml(node.id)}"
-        data-kind="${escapeHtml(node.kind)}" aria-pressed="${node.id === this.#selectedId}"
-        style="--node-x:${x}px;--node-y:${y}px">
-        <button class="drag-handle" type="button" data-drag-handle aria-label="Move ${escapeHtml(node.id)}">⠿</button>
-        <button class="node-select" type="button">
-          <strong>${escapeHtml(node.label)}</strong><small>${escapeHtml(node.id || node.nodeName)}</small>
+        data-kind="${escapeHtml(node.kind)}"
+        style="--node-x:${position.x}px;--node-y:${position.y}px">
+        <div class="node-header">
+          <span class="kind-icon">${iconMarkup(node.kind)}</span>
+          <span class="kind-label">${escapeHtml(KIND_LABELS[node.kind] ?? node.kind)}</span>
+          <button class="drag-handle" type="button" data-drag-handle aria-label="Move ${escapeHtml(node.id)}">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="8" cy="7" r="1"/><circle cx="16" cy="7" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="8" cy="17" r="1"/><circle cx="16" cy="17" r="1"/></svg>
+          </button>
+        </div>
+        <button class="node-select" type="button" aria-pressed="${node.id === this.#selectedId}">
+          <strong>${escapeHtml(node.label)}</strong><small>#${escapeHtml(node.id || node.nodeName)}</small>
         </button>
         <span class="ports">
-          ${["source", "event"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="input" aria-label="Connect into ${escapeHtml(node.id)}">←</button>`}
-          ${["output", "consumer", "action"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="output" aria-label="Connect from ${escapeHtml(node.id)}">→</button>`}
+          ${["source", "event"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="input" aria-label="Connect into ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m13 8-4 4 4 4"/></svg></button>`}
+          ${["output", "consumer", "action"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="output" aria-label="Connect from ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m11 8 4 4-4 4"/></svg></button>`}
         </span>
       </div>
     `;
@@ -434,9 +547,9 @@ export class GraphEditorElement extends HTMLElement {
   }
 
   #updateEdges() {
-    const canvas = this.shadowRoot.querySelector(".canvas");
-    if (!canvas) return;
-    const canvasRect = canvas.getBoundingClientRect();
+    const surface = this.shadowRoot.querySelector(".canvas-surface");
+    if (!surface) return;
+    const surfaceRect = surface.getBoundingClientRect();
     const cards = new Map(
       [...this.shadowRoot.querySelectorAll("[data-node-id]")].map((card) => [
         card.dataset.nodeId,
@@ -453,10 +566,10 @@ export class GraphEditorElement extends HTMLElement {
       const toTarget = toCard.querySelector('[data-port="input"]') ?? toCard;
       const fromRect = fromTarget.getBoundingClientRect();
       const toRect = toTarget.getBoundingClientRect();
-      const fromX = fromRect.left - canvasRect.left + canvas.scrollLeft + fromRect.width / 2;
-      const fromY = fromRect.top - canvasRect.top + canvas.scrollTop + fromRect.height / 2;
-      const toX = toRect.left - canvasRect.left + canvas.scrollLeft + toRect.width / 2;
-      const toY = toRect.top - canvasRect.top + canvas.scrollTop + toRect.height / 2;
+      const fromX = fromRect.left - surfaceRect.left + fromRect.width / 2;
+      const fromY = fromRect.top - surfaceRect.top + fromRect.height / 2;
+      const toX = toRect.left - surfaceRect.left + toRect.width / 2;
+      const toY = toRect.top - surfaceRect.top + toRect.height / 2;
       const control = Math.max(36, Math.abs(toX - fromX) / 2);
       path.setAttribute(
         "d",

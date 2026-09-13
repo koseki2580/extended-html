@@ -41,6 +41,9 @@ editor.addEventListener("change", (event) => {
 });
 editor.addEventListener("error", (event) => showError(event.detail.data));
 
+// The custom element may upgrade before this module runs, so initialize independently of `ready`.
+updateMarkup();
+
 start.addEventListener("click", async () => {
   try {
     errorOutput.textContent = "";
