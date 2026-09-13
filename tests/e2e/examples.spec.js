@@ -480,9 +480,93 @@ test("overview and sidebar expose WebRTC and Graph editor samples", async ({ pag
     "href",
     /\/examples\/graph-editor\/$/,
   );
+  await expect(
+    navigation.getByRole("link", { name: "Graph: Custom handler" }),
+  ).toHaveAttribute("href", /\/examples\/graph-editor\/custom-handler\.html$/);
   await expect(page.locator('.example-card[href="./audio-context/webrtc.html"]')).toHaveCount(1);
   await expect(page.locator('.example-card[href="./graph-editor/"]')).toHaveCount(1);
+  await expect(
+    page.locator('.example-card[href="./graph-editor/custom-handler.html"]'),
+  ).toHaveCount(1);
 });
+
+test("Custom handler sample runs a reviewed global function through the graph", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+
+  await expect(page.locator("body")).toHaveAttribute("data-page", "graph-custom-handler");
+  await expect(page.getByRole("heading", { name: "Connect application logic." })).toBeVisible();
+  await expect(page.getByTestId("handler-source")).toContainText(
+    "CustomHandlers.Measure(event)",
+  );
+  const editor = page.locator("graph-editor#handler-editor");
+  await expect(editor.locator("graph-action#measure-chunk")).toHaveAttribute(
+    "handler",
+    "CustomHandlers.Measure(event)",
+  );
+  await expect(page.getByTestId("serialized-handler-markup")).not.toContainText('src="blob:');
+
+  await page.getByRole("button", { name: "Start handler graph" }).click();
+  await expect(page.getByTestId("handler-audio-state")).toHaveText("Running");
+  await page.getByRole("button", { name: "Request handler data" }).click();
+  await expect(page.getByTestId("measure-count")).not.toHaveText("0");
+  await expect(page.getByTestId("handler-results")).toContainText("Blob");
+  await expect(page.getByTestId("handler-results")).toContainText("dataavailable");
+  expect(errors).toEqual([]);
+});
+
+test("Custom handler sample adds a second event action entirely through the editor", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+  const editor = page.locator("graph-editor#handler-editor");
+
+  await editor.locator('[data-node-id="recorder"] .node-select').click();
+  await editor.getByRole("button", { name: "Add Event" }).click();
+  const addedEvent = editor.locator(":scope > graph-event").last();
+  const eventId = await addedEvent.getAttribute("id");
+  await editor.locator('[data-property="type"]').fill("dataavailable");
+  await editor.locator('[data-property="type"]').press("Tab");
+  await expect(addedEvent).toHaveAttribute("from", "recorder");
+  await expect(addedEvent).toHaveAttribute("type", "dataavailable");
+
+  await editor.getByRole("button", { name: "Add Action" }).click();
+  const addedAction = editor.locator(":scope > graph-action").last();
+  await editor.locator('[data-property="handler"]').fill("CustomHandlers.Audit(event)");
+  await editor.locator('[data-property="handler"]').press("Tab");
+  await expect(addedAction).toHaveAttribute("from", eventId);
+  await expect(addedAction).toHaveAttribute("handler", "CustomHandlers.Audit(event)");
+  await expect(page.getByTestId("serialized-handler-markup")).toContainText(
+    'handler="CustomHandlers.Audit(event)"',
+  );
+
+  await page.getByRole("button", { name: "Start handler graph" }).click();
+  await page.getByRole("button", { name: "Request handler data" }).click();
+  await expect(page.getByTestId("audit-count")).not.toHaveText("0");
+  await expect(page.getByTestId("handler-results")).toContainText("Audit handler");
+  expect(errors).toEqual([]);
+});
+
+for (const width of [375, 1440]) {
+  test(`Custom handler sample remains usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+
+    await expect(page.getByRole("heading", { name: "Connect application logic." })).toBeVisible();
+    await expect(page.locator("graph-editor#handler-editor")).toBeVisible();
+    const layout = await page.evaluate(() => ({
+      pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      undersized: [...document.querySelectorAll("button")]
+        .filter((button) => button.getBoundingClientRect().height < 44)
+        .map((button) => button.textContent.trim()),
+    }));
+    expect(layout.pageOverflow).toBe(0);
+    expect(layout.undersized).toEqual([]);
+  });
+}
 
 test("Graph editor sample routes recorder data through graph-event and graph-action", async ({
   page,

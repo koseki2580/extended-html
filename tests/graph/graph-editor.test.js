@@ -124,6 +124,29 @@ describe("graph-editor", () => {
     );
   });
 
+  it("selects an event and action immediately after adding them from the palette", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+
+    shadow.querySelector('[data-node-id="recorder"] .node-select').click();
+    shadow.querySelector('[data-action="add-event"]').click();
+    await nextTask();
+    assert(
+      shadow.querySelector('[data-node-id="graph-event-1"] .node-select[aria-pressed="true"]'),
+      "the new event is selected",
+    );
+    assert(shadow.querySelector('[data-property="type"]'), "event fields are ready to edit");
+
+    shadow.querySelector('[data-action="add-action"]').click();
+    await nextTask();
+    assert(
+      shadow.querySelector('[data-node-id="graph-action-1"] .node-select[aria-pressed="true"]'),
+      "the new action is selected",
+    );
+    assert(shadow.querySelector('[data-property="handler"]'), "action fields are ready to edit");
+  });
+
   it("supports keyboard edge connection and disconnection", async () => {
     const editor = createEditor();
     const music = document.createElement("audio-input-file");

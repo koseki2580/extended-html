@@ -421,9 +421,15 @@ export class GraphEditorElement extends HTMLElement {
     if (action === "remove") return this.removeNode(selected.element);
     if (action === "add-event") {
       if (!selected?.events.length) throw new TypeError("Selected node exposes no events");
-      return this.addEvent(selected.element, selected.events[0]);
+      const element = this.addEvent(selected.element, selected.events[0]);
+      this.#selectedId = element.id;
+      return element;
     }
-    if (action === "add-action") return this.addAction(selected.element);
+    if (action === "add-action") {
+      const element = this.addAction(selected.element);
+      this.#selectedId = element.id;
+      return element;
+    }
   }
 
   #handleChange = (event) => {

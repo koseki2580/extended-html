@@ -28,7 +28,8 @@ Last-Event-ID reconnection, and DOM-removal cleanup against a local SSE endpoint
 Audio coverage uses fake browser media devices to exercise graph lifecycle,
 recording, native MediaStream handoff, and two real local RTCPeerConnection
 instances. Graph editor coverage verifies light-DOM synchronization, pointer
-and keyboard connections, attribute editing, and recorder event/action flow.
+and keyboard connections, attribute editing, recorder event/action flow, and
+application handler references added through the editor UI.
 
 ## Examples
 

@@ -509,12 +509,80 @@ body[data-page="graph-editor"] .site-main {
   width: min(100%, 96rem);
 }
 
+body[data-page="graph-custom-handler"] .site-main {
+  width: min(100%, 96rem);
+}
+
 body[data-page="graph-editor"] .hero {
   margin-bottom: clamp(2rem, 4vw, 3.5rem);
 }
 
 body[data-page="graph-editor"] .hero h1 {
   font-size: clamp(2.8rem, 6vw, 5.5rem);
+}
+
+.handler-code-panel {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.8fr) minmax(20rem, 1.2fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.handler-code-panel h2 {
+  margin-bottom: 0.75rem;
+}
+
+.handler-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.handler-steps li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: start;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  color: var(--muted);
+  background: #101c30;
+  font-size: 0.78rem;
+}
+
+.handler-steps span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid #38bdf877;
+  border-radius: 999px;
+  color: #bae6fd;
+  background: #0c2033;
+  font: 700 0.75rem "JetBrains Mono", ui-monospace, monospace;
+}
+
+.handler-steps strong,
+.handler-steps code {
+  color: var(--text);
+}
+
+.handler-results {
+  margin-top: 1rem;
+}
+
+body[data-page="graph-custom-handler"] .hero {
+  margin-bottom: clamp(2rem, 4vw, 3.5rem);
+}
+
+body[data-page="graph-custom-handler"] .graph-example-heading {
+  align-items: stretch;
+  flex-direction: column;
 }
 
 .markup-output {
@@ -587,6 +655,14 @@ body[data-page="graph-editor"] .hero h1 {
 
   .graph-steps li {
     min-width: 0;
+  }
+
+  .handler-code-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .handler-steps {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -140,6 +140,36 @@ The editor dispatches `ready`, `change`, `nodeadd`, `noderemove`, `nodechange`,
 generic `change` event share the same detail object. `error` places the Error or
 DOMException in `event.detail.data`.
 
+## Application handler workflow
+
+Application-specific processing stays in normal JavaScript rather than inside
+the graph markup. Expose a named function through `globalThis`, connect a
+`<graph-action>` to a `<graph-event>`, and set the action's `handler` attribute
+to that function call. The editor Inspector edits the same attribute.
+
+```js
+globalThis.CustomHandlers = {
+  Measure(event) {
+    const blob = event.detail.data;
+    console.log(blob.size, event.detail.metadata.sourceEvent);
+  },
+};
+```
+
+```html
+<graph-event id="chunk-ready" from="recorder" type="dataavailable"></graph-event>
+<graph-action
+  id="measure-chunk"
+  from="chunk-ready"
+  handler="CustomHandlers.Measure(event)"
+></graph-action>
+```
+
+The handler value is a reference, not a JavaScript body. The editor never uses
+`eval` or `new Function`; arbitrary implementation code remains reviewable in
+the imported module. The runnable [custom handler example](https://koseki2580.github.io/extended-html/examples/graph-editor/custom-handler.html)
+also demonstrates adding a second action through the visual editor.
+
 ## Adapter contract
 
 `registerGraphAdapter(rootName, adapter)` registers a direct-root tag. An

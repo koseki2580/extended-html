@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Connect reviewed application JavaScript to declarative browser events with the extended-html Graph editor."
+    />
+    <title>Custom graph handler example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="graph-custom-handler">
+    <a class="skip-link" href="#main-content">Skip to custom handler example</a>
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main" id="main-content" tabindex="-1">
+        <header class="hero">
+          <p class="eyebrow">Graph editor · Application handler</p>
+          <h1>Connect<br />application logic.</h1>
+          <p class="hero-copy">
+            Write normal JavaScript, expose one named function, and use the
+            visual editor to connect browser data to it—without evaluating code
+            from the graph.
+          </p>
+        </header>
+
+        <div class="example-layout">
+          <section class="panel handler-code-panel" aria-labelledby="handler-code-heading">
+            <div>
+              <p class="eyebrow">Step 1 · JavaScript module</p>
+              <h2 id="handler-code-heading">Write a reviewed handler</h2>
+              <p class="field-help">
+                The implementation remains in a normal module. Only its stable
+                namespace is exposed to declarative markup.
+              </p>
+            </div>
+            <pre class="code-sample"><code data-testid="handler-source">globalThis.CustomHandlers = {
+  Measure(event) {
+    const blob = event.detail.data;
+    console.log(blob.size, event.detail.metadata.sourceEvent);
+    appendResult("Measure", event);
+  },
+};
+
+// The editor stores this reference, not the function body:
+handler="CustomHandlers.Measure(event)"</code></pre>
+          </section>
+
+          <section class="panel graph-example-panel" aria-labelledby="handler-editor-heading">
+            <div class="graph-example-heading">
+              <div>
+                <p class="eyebrow">Step 2 · Declarative connection</p>
+                <h2 id="handler-editor-heading">Wire it in the editor</h2>
+                <p class="field-help">
+                  The initial Measure action is runnable. Add an Audit path to
+                  see one event safely invoke multiple application functions.
+                </p>
+              </div>
+              <ol class="handler-steps" aria-label="Add another custom handler">
+                <li><span>1</span>Select <strong>Media recorder</strong>, then Add Event</li>
+                <li><span>2</span>Set type to <code>dataavailable</code></li>
+                <li><span>3</span>Add Action and set handler to <code>CustomHandlers.Audit(event)</code></li>
+              </ol>
+            </div>
+            <p class="graph-scroll-hint">
+              The dashed path is application orchestration; the solid path is audio data flow.
+            </p>
+            <graph-editor id="handler-editor">
+              <audio-context id="handler-audio">
+                <audio-input-file id="tone" loop>
+                  <audio-stream-output id="recording-stream">
+                    <media-recorder id="recorder"></media-recorder>
+                  </audio-stream-output>
+                </audio-input-file>
+              </audio-context>
+              <graph-event
+                id="chunk-ready"
+                from="recorder"
+                type="dataavailable"
+              ></graph-event>
+              <graph-action
+                id="measure-chunk"
+                from="chunk-ready"
+                handler="CustomHandlers.Measure(event)"
+              ></graph-action>
+            </graph-editor>
+          </section>
+
+          <section class="panel" aria-labelledby="handler-run-heading">
+            <p class="eyebrow">Step 3 · Real browser event</p>
+            <h2 id="handler-run-heading">Run the event flow</h2>
+            <p class="audio-note" role="note">
+              <strong>Self-contained input:</strong> This page generates a local
+              WAV tone, records it as a MediaStream, and passes each Blob through
+              <code>event.detail.data</code>.
+            </p>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">audio: <strong data-testid="handler-audio-state">Suspended</strong></span>
+              <span class="status-pill">Measure: <strong data-testid="measure-count">0</strong></span>
+              <span class="status-pill">Audit: <strong data-testid="audit-count">0</strong></span>
+            </div>
+            <div class="socket-actions" role="group" aria-label="Custom handler lifecycle">
+              <button class="primary" id="start-handler" type="button">Start handler graph</button>
+              <button id="request-handler-data" type="button" disabled>Request handler data</button>
+              <button id="close-handler" type="button">Close handler graph</button>
+            </div>
+            <p id="handler-error" class="field-help" role="alert"></p>
+          </section>
+
+          <section class="panel" aria-labelledby="handler-results-heading">
+            <h2 id="handler-results-heading">Application results</h2>
+            <p class="field-help">
+              Each entry identifies the application function and the original browser event.
+            </p>
+            <ol class="event-log handler-results" data-testid="handler-results" aria-live="polite"></ol>
+          </section>
+
+          <section class="panel" aria-labelledby="handler-markup-heading">
+            <h2 id="handler-markup-heading">Portable handler HTML</h2>
+            <p class="field-help">
+              The generated runtime Blob URL is omitted; event and handler
+              connections remain ready to copy.
+            </p>
+            <pre class="code-sample markup-output"><code data-testid="serialized-handler-markup"></code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="../../src/graph/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/graph-handler-example.js"></script>
+  </body>
+</html>

@@ -47,6 +47,11 @@ const links = [
     path: "graph-editor/",
   },
   {
+    id: "graph-custom-handler",
+    label: "Graph: Custom handler",
+    path: "graph-editor/custom-handler.html",
+  },
+  {
     id: "guide-en",
     label: "English User Guide",
     href: new URL("guide/en/", siteRoot).href,
