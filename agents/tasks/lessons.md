@@ -83,3 +83,10 @@
 - **Rule:** Give dragging a dedicated handle and keep the primary button free of pointer-move side effects.
 - **Why:** Removing a click target between pointer-up and click makes real-browser behavior diverge from programmatic unit clicks.
 - **Apply-when:** Building draggable cards that also contain buttons, links, or editable controls.
+
+## Test inherited color schemes inside shadow DOM
+
+- **What happened:** Semantic visibility checks passed while white controls rendered white text after inheriting a dark page color scheme.
+- **Rule:** Audit computed foreground/background contrast for native controls inside shadow roots under both host color schemes.
+- **Why:** `toBeVisible()` proves geometry, not readable pixels, and user-agent control colors can ignore assumed inheritance.
+- **Apply-when:** Styling reusable custom elements with buttons, inputs, or selects.
