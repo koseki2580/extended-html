@@ -76,3 +76,10 @@
 - **Rule:** Prefix shell variables with a task-specific name instead of generic shell terms such as `status`.
 - **Why:** Shell-reserved parameters vary by shell and can turn an otherwise portable command into an immediate failure.
 - **Apply-when:** Writing shell loops, polling commands, or inline automation.
+
+## Separate drag handles from activation controls
+
+- **What happened:** Pointer-up redrew a draggable node before its nested selection button could receive click.
+- **Rule:** Give dragging a dedicated handle and keep the primary button free of pointer-move side effects.
+- **Why:** Removing a click target between pointer-up and click makes real-browser behavior diverge from programmatic unit clicks.
+- **Apply-when:** Building draggable cards that also contain buttons, links, or editable controls.
