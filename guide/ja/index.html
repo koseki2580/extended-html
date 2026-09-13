@@ -31,6 +31,7 @@
             <li><a href="#api">API一覧</a></li>
             <li><a href="#examples">サンプル</a></li>
             <li><a href="#audio-context">Audio graph</a></li>
+            <li><a href="#graph-editor">Graph editor</a></li>
             <li><a href="#event-source">Server-Sent Events</a></li>
           </ul>
           <div class="guide-footer">
@@ -48,7 +49,8 @@
             extended-htmlはWebSocket用の<code>&lt;web-socket&gt;</code>、Server-Sent Events用の
             <code>&lt;event-source&gt;</code>と、宣言的なAudio graph用の
             <code>&lt;audio-context&gt;</code>を提供します。いずれも標準JavaScriptモジュールだけで動作し、
-            フレームワークやビルドは不要です。
+            フレームワークやビルドは不要です。<code>&lt;graph-editor&gt;</code>を使うと、
+            HTMLを維持したまま対応graphを視覚的に編集できます。
           </p>
         </header>
 
@@ -309,6 +311,7 @@ outputButton.addEventListener("click", async () =&gt; {
             <a class="example-link" href="../../examples/audio-context/microphone.html">Microphoneサンプル</a>
             <a class="example-link" href="../../examples/audio-context/file-filter.html">File filterサンプル</a>
             <a class="example-link" href="../../examples/audio-context/media-stream.html">MediaStreamサンプル</a>
+            <a class="example-link" href="../../examples/audio-context/webrtc.html">WebRTCサンプル</a>
           </div>
           <p>
             gain、analyser、oscillator、delayとfeedback、channel splitter/merger、compressor、convolver、
@@ -319,8 +322,39 @@ outputButton.addEventListener("click", async () =&gt; {
           <a class="example-link" href="../../examples/audio-context/">Audioサンプル</a>
         </section>
 
+        <section class="guide-section" id="graph-editor">
+          <p class="eyebrow">11 · Graph editor</p>
+          <h2>HTML graphを視覚的に編集する</h2>
+          <p>
+            対応する宣言的rootを1つ、<code>&lt;graph-editor&gt;</code>の直下に置きます。
+            palette、canvas、inspectorはlight DOMの要素を直接変更し、
+            <code>serialize()</code>は現在の持ち運べるHTMLを返します。最初のadapterは
+            <code>&lt;audio-context&gt;</code>に対応しています。
+          </p>
+          <pre class="code-block"><code>&lt;graph-editor id="editor"&gt;
+  &lt;audio-context&gt;
+    &lt;audio-input-mic id="mic"&gt;
+      &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
+    &lt;/audio-input-mic&gt;
+  &lt;/audio-context&gt;
+&lt;/graph-editor&gt;</code></pre>
+          <p>
+            output portからinput portへdragするか、From/Toのkeyboard操作で接続します。
+            node編集は<code>change</code>、<code>nodeadd</code>、<code>nodechange</code>、
+            edge eventを<code>event.detail.data</code>と
+            <code>event.detail.metadata</code>の形式で通知します。
+          </p>
+          <p>
+            <code>&lt;graph-event from="recorder" type="dataavailable"&gt;</code>は
+            既存eventをgraph nodeとして公開します。接続した
+            <code>&lt;graph-action handler="SaveChunk(event)"&gt;</code>は指定されたglobal関数だけを呼び、
+            任意のJavaScriptを評価しません。
+          </p>
+          <a class="example-link" href="../../examples/graph-editor/">Graph editorサンプル</a>
+        </section>
+
         <section class="guide-section" id="event-source">
-          <p class="eyebrow">11 · Server-Sent Events</p>
+          <p class="eyebrow">12 · Server-Sent Events</p>
           <h2>server streamを要素のeventとして受信する</h2>
           <p>
             <code>&lt;event-source&gt;</code>は標準の<code>EventSource</code>をラップします。

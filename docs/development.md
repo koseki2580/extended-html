@@ -25,6 +25,10 @@ Worker transports. It also verifies explicit close, DOM-removal cleanup,
 reconnect behavior, example navigation, and the narrow-screen layout.
 EventSource coverage verifies main and Worker delivery metadata, native
 Last-Event-ID reconnection, and DOM-removal cleanup against a local SSE endpoint.
+Audio coverage uses fake browser media devices to exercise graph lifecycle,
+recording, native MediaStream handoff, and two real local RTCPeerConnection
+instances. Graph editor coverage verifies light-DOM synchronization, pointer
+and keyboard connections, attribute editing, and recorder event/action flow.
 
 ## Examples
 
@@ -44,6 +48,7 @@ the same source files that package consumers import.
 
 - `index.html`
 - `examples/`
+- `guide/`
 - `src/`
 
 Tests, dependencies, and agent files are intentionally excluded. The Pages

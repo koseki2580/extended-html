@@ -15,6 +15,7 @@ its implementation contract and repository operations for maintainers.
 - [`<web-socket>` API](web-socket.md)
 - [Declarative Audio graph API](audio-context.md)
 - [`<event-source>` API](event-source.md)
+- [Generic `<graph-editor>` API](graph-editor.md)
 
 ## Repository operations
 

@@ -31,6 +31,7 @@
             <li><a href="#api">API reference</a></li>
             <li><a href="#examples">Examples</a></li>
             <li><a href="#audio-context">Audio graph</a></li>
+            <li><a href="#graph-editor">Graph editor</a></li>
             <li><a href="#event-source">Server-sent events</a></li>
           </ul>
           <div class="guide-footer">
@@ -49,6 +50,8 @@
             <code>&lt;event-source&gt;</code> for server-sent events, and
             <code>&lt;audio-context&gt;</code> for declarative Audio graphs. All use
             standard JavaScript modules and need no framework or build step.
+            <code>&lt;graph-editor&gt;</code> can edit supported graphs visually while
+            preserving their HTML.
           </p>
         </header>
 
@@ -322,6 +325,7 @@ outputButton.addEventListener("click", async () =&gt; {
             <a class="example-link" href="../../examples/audio-context/microphone.html">Microphone sample</a>
             <a class="example-link" href="../../examples/audio-context/file-filter.html">File filter sample</a>
             <a class="example-link" href="../../examples/audio-context/media-stream.html">MediaStream sample</a>
+            <a class="example-link" href="../../examples/audio-context/webrtc.html">WebRTC sample</a>
           </div>
           <p>
             Gain, analyser, oscillator, delay and feedback, channel splitter and
@@ -333,8 +337,40 @@ outputButton.addEventListener("click", async () =&gt; {
           <a class="example-link" href="../../examples/audio-context/">Audio example</a>
         </section>
 
+        <section class="guide-section" id="graph-editor">
+          <p class="eyebrow">11 · Graph editor</p>
+          <h2>Edit the HTML graph visually</h2>
+          <p>
+            Put one supported declarative root directly inside
+            <code>&lt;graph-editor&gt;</code>. The palette, canvas, and inspector edit
+            those light-DOM elements directly; <code>serialize()</code> returns the
+            current portable HTML. The first adapter supports
+            <code>&lt;audio-context&gt;</code>.
+          </p>
+          <pre class="code-block"><code>&lt;graph-editor id="editor"&gt;
+  &lt;audio-context&gt;
+    &lt;audio-input-mic id="mic"&gt;
+      &lt;audio-output id="speaker"&gt;&lt;/audio-output&gt;
+    &lt;/audio-input-mic&gt;
+  &lt;/audio-context&gt;
+&lt;/graph-editor&gt;</code></pre>
+          <p>
+            Drag output ports to input ports or use the From/To keyboard controls.
+            Node edits dispatch <code>change</code>, <code>nodeadd</code>,
+            <code>nodechange</code>, and edge events using
+            <code>event.detail.data</code> and <code>event.detail.metadata</code>.
+          </p>
+          <p>
+            <code>&lt;graph-event from="recorder" type="dataavailable"&gt;</code>
+            exposes an existing event as a graph node. A connected
+            <code>&lt;graph-action handler="SaveChunk(event)"&gt;</code> calls only the
+            named global function; it does not evaluate arbitrary JavaScript.
+          </p>
+          <a class="example-link" href="../../examples/graph-editor/">Graph editor example</a>
+        </section>
+
         <section class="guide-section" id="event-source">
-          <p class="eyebrow">11 · Server-sent events</p>
+          <p class="eyebrow">12 · Server-sent events</p>
           <h2>Receive a server stream as element events</h2>
           <p>
             <code>&lt;event-source&gt;</code> wraps native <code>EventSource</code>.

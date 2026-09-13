@@ -114,6 +114,30 @@ with one user-initiated `resume()` call:
 </script>
 ```
 
+## Edit a graph visually
+
+Wrap one declarative root with `<graph-editor>`. Visual edits update the same
+HTML instead of creating a separate graph format:
+
+```html
+<graph-editor id="editor">
+  <audio-context>
+    <audio-input-mic id="mic">
+      <audio-biquad-filter id="filter" frequency="120">
+        <audio-output></audio-output>
+      </audio-biquad-filter>
+    </audio-input-mic>
+  </audio-context>
+</graph-editor>
+
+<script type="module">
+  import "https://koseki2580.github.io/extended-html/src/graph/index.js";
+</script>
+```
+
+The editor provides pointer and keyboard connections, an attribute inspector,
+and optional `<graph-event>` / `<graph-action>` event flows.
+
 ## Guides and examples
 
 - [English User Guide](https://koseki2580.github.io/extended-html/guide/en/)

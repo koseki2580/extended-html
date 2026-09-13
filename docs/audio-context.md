@@ -391,6 +391,19 @@ state are discarded without reporting a transient failure. Later valid
 mutations can recover without recreating the existing graph. Imperative
 `AudioParam` values are preserved by unrelated DOM reconciliation.
 
+## Visual editing
+
+The optional generic `<graph-editor>` projects this same declarative structure
+into a palette, canvas, and inspector. It does not replace the Audio graph with
+JSON: node addition, removal, configuration, position, and cross-tree
+connections update the original light DOM. Invalid edits use the Audio
+validation above and roll back to the previous valid markup.
+
+Import `src/graph/index.js` or the `custom-html/graph-editor` package export,
+then place exactly one `<audio-context>` directly inside `<graph-editor>`. See
+the [Graph editor API](graph-editor.md) for editor methods, mutation events,
+`<graph-event>`, and `<graph-action>`.
+
 ## Errors and security boundaries
 
 - Web Audio unavailability rejects initial `resume()` with `NotSupportedError`.

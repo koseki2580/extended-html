@@ -30,6 +30,10 @@ test("README presents extended-html usage and delegates detail to the guides", a
   assert.match(readme, /<media-recorder/);
   assert.match(readme, /event\.detail\.data/);
   assert.match(readme, /await audio\.resume\(\)/);
+  assert.match(readme, /<graph-editor id="editor">/);
+  assert.match(readme, /src\/graph\/index\.js/);
+  assert.match(readme, /<graph-event>/);
+  assert.match(readme, /<graph-action>/);
   assert.match(readme, /extended-html\/guide\/ja\//);
   assert.match(readme, /extended-html\/guide\/en\//);
   assert.match(readme, /extended-html\/examples\//);
