@@ -48,6 +48,14 @@ The From/To controls provide a keyboard-accessible equivalent to port dragging.
 All graph changes update the original light DOM. `serialize()` returns that
 current HTML.
 
+Selecting a canvas node emphasizes that node, its direct incoming and outgoing
+nodes, and the edges between them. Other nodes remain available but are shown
+with lower visual priority. The Inspector lists the selection's Inputs and
+Outputs as native buttons; choosing one selects that related node and reveals
+it in the scrollable canvas. A polite status message announces the selection
+and relationship counts. These states belong only to the editor view and are
+never written to the declarative graph or returned by `serialize()`.
+
 The editor owns a self-contained dark color scheme so its native controls stay
 readable when it is embedded in either a light or dark document. Host pages may
 customize its published `--graph-*` color properties, but should provide a

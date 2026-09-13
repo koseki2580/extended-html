@@ -256,6 +256,11 @@ export class GraphEditorElement extends HTMLElement {
         this.#selectedId = null;
       }
       const selected = this.#model.nodes.find((node) => node.id === this.#selectedId) ?? null;
+      const relationships = this.#relationships(selected);
+      const relatedIds = new Set([
+        ...relationships.incoming.map((node) => node.id),
+        ...relationships.outgoing.map((node) => node.id),
+      ]);
       const positions = layoutGraph(this.#model.nodes, this.#model.edges);
       const canvasWidth = Math.max(
         720,
@@ -294,9 +299,13 @@ export class GraphEditorElement extends HTMLElement {
             <div class="canvas" tabindex="0" aria-label="Scrollable graph drawing area">
               <div class="canvas-surface" style="--canvas-width:${canvasWidth}px;--canvas-height:${canvasHeight}px">
                 <svg aria-hidden="true" preserveAspectRatio="none">
-                  ${this.#model.edges.map((edge, index) => `<path data-edge-index="${index}" data-edge-from="${escapeHtml(edge.from.id)}" data-edge-to="${escapeHtml(edge.to.id)}" data-kind="${escapeHtml(edge.kind)}" d=""></path>`).join("")}
+                  ${this.#model.edges.map((edge, index) => `<path data-edge-index="${index}" data-edge-from="${escapeHtml(edge.from.id)}" data-edge-to="${escapeHtml(edge.to.id)}" data-kind="${escapeHtml(edge.kind)}" data-relation="${selected && (edge.from.id === selected.id || edge.to.id === selected.id) ? "connected" : selected ? "unrelated" : "none"}" d=""></path>`).join("")}
                 </svg>
-                ${this.#model.nodes.map((node) => this.#nodeMarkup(node, positions.get(node.id))).join("")}
+                ${this.#model.nodes.map((node) => this.#nodeMarkup(
+                  node,
+                  positions.get(node.id),
+                  node.id === selected?.id ? "selected" : relatedIds.has(node.id) ? "connected" : selected ? "unrelated" : "none",
+                )).join("")}
               </div>
             </div>
           </section>
@@ -305,7 +314,7 @@ export class GraphEditorElement extends HTMLElement {
               <h2>Inspector</h2>
               <p>Configure selection</p>
             </div>
-            ${this.#inspectorMarkup(selected)}
+            ${this.#inspectorMarkup(selected, relationships)}
           </aside>
         </div>
       `;
@@ -345,10 +354,14 @@ export class GraphEditorElement extends HTMLElement {
     `;
   }
 
-  #nodeMarkup(node, position) {
+  #nodeMarkup(node, position, relation) {
+    const relationLabel = relation === "selected"
+      ? "Selected"
+      : relation === "connected" ? "Connected" : "";
     return `
       <div class="node" data-node-id="${escapeHtml(node.id)}"
         data-kind="${escapeHtml(node.kind)}"
+        data-relation="${relation}"
         style="--node-x:${position.x}px;--node-y:${position.y}px">
         <div class="node-header">
           <span class="kind-icon">${iconMarkup(node.kind)}</span>
@@ -360,6 +373,7 @@ export class GraphEditorElement extends HTMLElement {
         <button class="node-select" type="button" aria-pressed="${node.id === this.#selectedId}">
           <strong>${escapeHtml(node.label)}</strong><small>#${escapeHtml(node.id || node.nodeName)}</small>
         </button>
+        ${relationLabel ? `<span class="relation-badge">${relationLabel}</span>` : ""}
         <span class="ports">
           ${["source", "event"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="input" aria-label="Connect into ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m13 8-4 4 4 4"/></svg></button>`}
           ${["output", "consumer", "action"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="output" aria-label="Connect from ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m11 8 4 4-4 4"/></svg></button>`}
@@ -368,25 +382,46 @@ export class GraphEditorElement extends HTMLElement {
     `;
   }
 
-  #inspectorMarkup(selected) {
+  #inspectorMarkup(selected, relationships) {
     if (!selected) return '<p class="empty">Select a node to edit it.</p>';
     const fields = selected.properties.map((property) => `
       <label>${escapeHtml(property.name)}
         <input data-property="${escapeHtml(property.name)}" value="${escapeHtml(property.value ?? "")}">
       </label>
     `).join("");
+    const relationshipGroup = (label, nodes) => `
+      <section class="relationship-group" aria-labelledby="graph-${label.toLowerCase()}-heading">
+        <h3 id="graph-${label.toLowerCase()}-heading">${label} <span>${nodes.length}</span></h3>
+        ${nodes.length > 0 ? `<div class="relationship-list">${nodes.map((node) => `
+          <button type="button" data-related-id="${escapeHtml(node.id)}">
+            <strong>${escapeHtml(node.label)}</strong><small>#${escapeHtml(node.id)}</small>
+          </button>
+        `).join("")}</div>` : '<p class="empty">None</p>'}
+      </section>
+    `;
+    const inputLabel = `${relationships.incoming.length} ${relationships.incoming.length === 1 ? "input" : "inputs"}`;
+    const outputLabel = `${relationships.outgoing.length} ${relationships.outgoing.length === 1 ? "output" : "outputs"}`;
     return `
       <p><strong>${escapeHtml(selected.label)}</strong><br><small>${escapeHtml(selected.id)}</small></p>
+      <p class="selection-status" data-selection-status aria-live="polite">${escapeHtml(selected.label)} selected. ${inputLabel}, ${outputLabel}.</p>
+      <div class="relationships">
+        ${relationshipGroup("Inputs", relationships.incoming)}
+        ${relationshipGroup("Outputs", relationships.outgoing)}
+      </div>
       <div class="fields">${fields || '<span class="empty">No editable properties.</span>'}</div>
       ${["event", "action"].includes(selected.kind) ? "" : '<button class="danger" type="button" data-action="remove">Remove node</button>'}
     `;
   }
 
   #handleClick = (event) => {
+    const relatedButton = event.target.closest("[data-related-id]");
+    if (relatedButton) {
+      this.#selectNode(relatedButton.dataset.relatedId, true);
+      return;
+    }
     const nodeButton = event.target.closest("[data-node-id]");
     if (nodeButton) {
-      this.#selectedId = nodeButton.dataset.nodeId;
-      this.#render();
+      this.#selectNode(nodeButton.dataset.nodeId);
       return;
     }
 
@@ -512,6 +547,28 @@ export class GraphEditorElement extends HTMLElement {
 
   #selectedNode() {
     return this.#model.nodes.find((node) => node.id === this.#selectedId) ?? null;
+  }
+
+  #relationships(selected) {
+    if (!selected) return { incoming: [], outgoing: [] };
+    const incoming = new Map();
+    const outgoing = new Map();
+    for (const edge of this.#model.edges) {
+      if (edge.to.id === selected.id) incoming.set(edge.from.id, edge.from);
+      if (edge.from.id === selected.id) outgoing.set(edge.to.id, edge.to);
+    }
+    return { incoming: [...incoming.values()], outgoing: [...outgoing.values()] };
+  }
+
+  #selectNode(id, reveal = false) {
+    this.#selectedId = id;
+    this.#render();
+    const card = [...this.shadowRoot.querySelectorAll("[data-node-id]")]
+      .find((candidate) => candidate.dataset.nodeId === id);
+    card?.querySelector(".node-select")?.focus();
+    if (reveal && card) {
+      requestAnimationFrame(() => card.scrollIntoView({ block: "nearest", inline: "nearest" }));
+    }
   }
 
   #setOrchestrationProperty(element, name, value) {

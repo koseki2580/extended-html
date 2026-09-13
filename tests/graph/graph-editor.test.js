@@ -109,6 +109,75 @@ describe("graph-editor", () => {
     assertEqual(editor.querySelector("#filter").getAttribute("frequency"), "880", "DOM is updated");
   });
 
+  it("shows the selected node, its direct relationships, and active edges", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    const sourceBeforeSelection = editor.serialize();
+
+    shadow.querySelector('[data-node-id="filter"] .node-select').click();
+    await nextTask();
+
+    assertEqual(
+      shadow.querySelector('[data-node-id="filter"]').dataset.relation,
+      "selected",
+      "the clicked node is identified as selected",
+    );
+    for (const id of ["mic", "speaker", "stream"]) {
+      assertEqual(
+        shadow.querySelector(`[data-node-id="${id}"]`).dataset.relation,
+        "connected",
+        `${id} is identified as directly connected`,
+      );
+    }
+    assertEqual(
+      shadow.querySelector('[data-node-id="recorder"]').dataset.relation,
+      "unrelated",
+      "a node beyond the direct relationship is de-emphasized",
+    );
+    assertEqual(
+      shadow.querySelectorAll('path[data-relation="connected"]').length,
+      3,
+      "only edges touching the selection are emphasized",
+    );
+    assertEqual(
+      shadow.querySelector('[data-selection-status]').textContent.trim(),
+      "Biquad filter selected. 1 input, 2 outputs.",
+      "the selection summary is available to assistive technology",
+    );
+    assertEqual(
+      editor.serialize(),
+      sourceBeforeSelection,
+      "selection context stays out of the portable graph",
+    );
+  });
+
+  it("navigates between connected nodes from the Inspector", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+
+    shadow.querySelector('[data-node-id="filter"] .node-select').click();
+    await nextTask();
+    assert(shadow.querySelector('[data-related-id="mic"]'), "the input relationship is listed");
+    const output = shadow.querySelector('[data-related-id="stream"]');
+    assert(output, "the output relationship is listed");
+    output.click();
+    await nextTask();
+    await waitForLayout();
+
+    assertEqual(
+      shadow.querySelector('[data-node-id="stream"]').dataset.relation,
+      "selected",
+      "the related node becomes selected",
+    );
+    assertEqual(
+      shadow.activeElement?.closest("[data-node-id]")?.dataset.nodeId,
+      "stream",
+      "keyboard focus follows Inspector navigation",
+    );
+  });
+
   it("edits event and action configuration without routing it through the Audio adapter", async () => {
     const editor = createEditor();
     await nextTask();

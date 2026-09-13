@@ -167,6 +167,12 @@ export const graphEditorStyles = `
     stroke: #c084fc;
     stroke-dasharray: 6 5;
   }
+  .canvas-surface > svg > path[data-relation="connected"] {
+    filter: drop-shadow(0 0 .3rem rgb(56 189 248 / .7));
+    stroke: var(--graph-accent-strong);
+    stroke-width: 4;
+  }
+  .canvas-surface > svg > path[data-relation="unrelated"] { opacity: .22; }
 
   .node {
     background: var(--graph-panel-raised);
@@ -187,6 +193,9 @@ export const graphEditorStyles = `
     border-color: var(--graph-accent);
     box-shadow: 0 0 0 2px rgb(56 189 248 / .2), 0 .6rem 1.5rem rgb(0 0 0 / .24);
   }
+  .node[data-relation="selected"] { outline: 3px solid var(--graph-accent); outline-offset: 2px; }
+  .node[data-relation="connected"] { border-width: 2px; }
+  .node[data-relation="unrelated"] { box-shadow: none; filter: saturate(.45); }
   .node[data-kind="event"], .node[data-kind="action"] { border-style: dashed; }
   .node-header {
     align-items: center;
@@ -233,6 +242,17 @@ export const graphEditorStyles = `
     text-align: start;
     width: 100%;
   }
+  .relation-badge {
+    background: #0c3148;
+    border: 1px solid var(--graph-accent);
+    border-radius: 999px;
+    color: #d8f3ff;
+    display: inline-block;
+    font-size: .62rem;
+    font-weight: 750;
+    margin: 0 .35rem .3rem;
+    padding: .15rem .45rem;
+  }
   .node strong, .node small { display: block; overflow-wrap: anywhere; }
   .node strong { color: var(--graph-text); font-size: .86rem; }
   .node small {
@@ -255,6 +275,35 @@ export const graphEditorStyles = `
   }
 
   .fields label { color: var(--graph-muted); display: grid; font-size: .75rem; gap: .3rem; }
+  .selection-status {
+    background: #0c3148;
+    border-inline-start: 3px solid var(--graph-accent);
+    color: var(--graph-text);
+    font-size: .75rem;
+    margin: 0 0 1rem;
+    padding: .55rem .65rem;
+  }
+  .relationships { display: grid; gap: .85rem; margin-block-end: 1rem; }
+  .relationship-group h3 {
+    color: var(--graph-muted);
+    display: flex;
+    font-size: .7rem;
+    justify-content: space-between;
+    letter-spacing: .08em;
+    margin: 0 0 .35rem;
+    text-transform: uppercase;
+  }
+  .relationship-group h3 span { color: var(--graph-accent-strong); }
+  .relationship-list { display: grid; gap: .35rem; }
+  .relationship-list button {
+    display: grid;
+    padding: .45rem .55rem;
+    text-align: start;
+    width: 100%;
+  }
+  .relationship-list strong, .relationship-list small { display: block; overflow-wrap: anywhere; }
+  .relationship-list strong { font-size: .76rem; }
+  .relationship-list small { color: var(--graph-muted); font-size: .66rem; }
   .fields input {
     background: var(--graph-canvas);
     border: 1px solid var(--graph-border-strong);

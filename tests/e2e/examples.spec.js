@@ -428,7 +428,7 @@ test("Graph editor controls stay readable in a dark page and the default layout 
         / (Math.min(foreground, background) + 0.05);
     };
     const controls = [...root.querySelectorAll(
-      ".palette button, .toolbar button, .toolbar select, .node-select, .drag-handle, .port",
+      ".palette button, .toolbar button, .toolbar select, .node-select, .drag-handle, .port, .inspector button",
     )];
     const cards = new Map(
       [...root.querySelectorAll("[data-node-id]")].map((card) => [
@@ -467,6 +467,43 @@ test("Graph editor controls stay readable in a dark page and the default layout 
   expect(audit.undersized).toEqual([]);
   expect(audit.edgesMoveForward).toBe(true);
   expect(audit.overlaps).toEqual([]);
+});
+
+test("Graph editor selection explains and navigates direct node relationships", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${server.httpUrl}/examples/graph-editor/`);
+  const editor = page.locator("graph-editor#editor");
+
+  await editor.locator('[data-node-id="filter"] .node-select').click();
+  await expect(editor.locator('[data-node-id="filter"]')).toHaveAttribute(
+    "data-relation",
+    "selected",
+  );
+  await expect(editor.locator('[data-node-id="mic"]')).toHaveAttribute(
+    "data-relation",
+    "connected",
+  );
+  await expect(editor.locator('[data-node-id="recorder"]')).toHaveAttribute(
+    "data-relation",
+    "unrelated",
+  );
+  await expect(editor.locator('[data-selection-status]')).toHaveText(
+    "Biquad filter selected. 1 input, 2 outputs.",
+  );
+  await expect(editor.locator('path[data-relation="connected"]')).toHaveCount(3);
+
+  const relatedOutput = editor.locator('[data-related-id="recording-output"]');
+  await relatedOutput.focus();
+  await relatedOutput.press("Enter");
+  await expect(editor.locator('[data-node-id="recording-output"]')).toHaveAttribute(
+    "data-relation",
+    "selected",
+  );
+  await expect(editor.locator('[data-node-id="recording-output"] .node-select')).toBeFocused();
+  expect(errors).toEqual([]);
 });
 
 test("overview and sidebar expose WebRTC and Graph editor samples", async ({ page }) => {
