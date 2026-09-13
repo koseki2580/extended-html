@@ -437,6 +437,20 @@ h2 {
   margin-top: 1rem;
 }
 
+.graph-example-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.graph-example-panel graph-editor {
+  min-width: 0;
+}
+
+.markup-output {
+  max-height: 24rem;
+  white-space: pre-wrap;
+}
+
 .sample-links {
   display: flex;
   flex-wrap: wrap;

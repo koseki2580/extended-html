@@ -37,6 +37,16 @@ const links = [
     path: "audio-context/media-stream.html",
   },
   {
+    id: "audio-webrtc",
+    label: "Audio: WebRTC",
+    path: "audio-context/webrtc.html",
+  },
+  {
+    id: "graph-editor",
+    label: "Graph editor",
+    path: "graph-editor/",
+  },
+  {
     id: "guide-en",
     label: "English User Guide",
     href: new URL("guide/en/", siteRoot).href,

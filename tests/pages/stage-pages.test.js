@@ -38,8 +38,12 @@ test("stages only the static site and runtime source", async () => {
       "index.html",
       "examples/index.html",
       "examples/audio-context/index.html",
+      "examples/audio-context/webrtc.html",
+      "examples/graph-editor/index.html",
       "examples/assets/audio-context-example.js",
       "examples/assets/event-source-example.js",
+      "examples/assets/webrtc-example.js",
+      "examples/assets/graph-editor-example.js",
       "examples/assets/site.css",
       "examples/assets/site.js",
       "examples/event-source/index.html",
@@ -85,6 +89,12 @@ test("stages only the static site and runtime source", async () => {
       "utf8",
     );
     assert.match(audioExample, /\.\.\/\.\.\/src\/audio\/index\.js/);
+
+    const graphExample = await readFile(
+      join(destination, "examples/graph-editor/index.html"),
+      "utf8",
+    );
+    assert.match(graphExample, /\.\.\/\.\.\/src\/graph\/index\.js/);
   } finally {
     await rm(destination, { recursive: true, force: true });
   }

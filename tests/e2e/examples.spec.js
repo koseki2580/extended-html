@@ -54,6 +54,7 @@ const guideSections = [
   "api",
   "examples",
   "audio-context",
+  "graph-editor",
   "event-source",
 ];
 
@@ -127,6 +128,13 @@ for (const guide of [
       "href",
       "../../examples/audio-context/",
     );
+    await expect(audioGuide.locator('a[href="../../examples/audio-context/webrtc.html"]')).toHaveCount(1);
+    const graphGuide = page.locator("#graph-editor");
+    await expect(graphGuide).toContainText("graph-editor");
+    await expect(graphGuide).toContainText("graph-event");
+    await expect(graphGuide).toContainText("graph-action");
+    await expect(graphGuide).toContainText("event.detail.data");
+    await expect(graphGuide.locator('a[href="../../examples/graph-editor/"]')).toHaveCount(1);
     for (const path of [
       "microphone.html",
       "file-filter.html",
@@ -318,6 +326,126 @@ test("focused MediaStream sample exposes tracks to a standard media element", as
   expect(errors).toEqual([]);
 });
 
+test("WebRTC sample sends Audio graph output to a local receiving peer", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/audio-context/webrtc.html`);
+
+  await page.getByRole("button", { name: "Start WebRTC audio" }).click();
+  await expect(page.getByTestId("sender-state")).toHaveText("connected", {
+    timeout: 10000,
+  });
+  await expect(page.getByTestId("receiver-state")).toHaveText("connected", {
+    timeout: 10000,
+  });
+  await expect(page.getByTestId("remote-track-state")).toHaveText("live audio track");
+  expect(
+    await page.locator("#remote-audio").evaluate((element) => ({
+      hasStream: element.srcObject instanceof MediaStream,
+      audioTracks: element.srcObject?.getAudioTracks().length ?? 0,
+      muted: element.muted,
+    })),
+  ).toEqual({ hasStream: true, audioTracks: 1, muted: true });
+
+  await page.getByRole("button", { name: "Close WebRTC audio" }).click();
+  await expect(page.getByTestId("sender-state")).toHaveText("closed");
+  await expect(page.getByTestId("receiver-state")).toHaveText("closed");
+  await expect(page.getByTestId("audio-state")).toHaveText("Closed");
+  expect(errors).toEqual([]);
+});
+
+test("Graph editor sample keeps visual edits and declarative HTML synchronized", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/graph-editor/`);
+
+  await expect(page.locator("body")).toHaveAttribute("data-page", "graph-editor");
+  await expect(page.getByRole("heading", { name: "Edit HTML as a graph." })).toBeVisible();
+  const editor = page.locator("graph-editor#editor");
+  await expect(editor.locator('[data-node-id="mic"]')).toBeVisible();
+  await expect(editor.locator('[data-node-id="chunk-ready"]')).toBeVisible();
+  await expect(editor.locator('[data-node-id="save-chunk"]')).toBeVisible();
+
+  await editor.locator('[data-node-id="filter"] .node-select').click();
+  const frequency = editor.locator('[data-property="frequency"]');
+  await frequency.fill("880");
+  await frequency.press("Tab");
+  await expect(editor.locator("audio-biquad-filter#filter")).toHaveAttribute(
+    "frequency",
+    "880",
+  );
+  await expect(page.getByTestId("serialized-markup")).toContainText('frequency="880"');
+
+  await editor.getByRole("button", { name: "Add Audio file" }).click();
+  await expect(editor.locator("audio-context > audio-input-file")).toHaveCount(1);
+  await expect(page.getByTestId("last-operation")).toHaveText("add");
+  const fileId = await editor.locator("audio-context > audio-input-file").getAttribute("id");
+  const outputPort = editor.locator(`[data-node-id="${fileId}"] [data-port="output"]`);
+  const inputPort = editor.locator('[data-node-id="filter"] [data-port="input"]');
+  const fromBox = await outputPort.boundingBox();
+  const toBox = await inputPort.boundingBox();
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + toBox.height / 2);
+  await page.mouse.up();
+  await expect(editor.locator(`audio-input-file#${fileId}`)).toHaveAttribute("to", "filter");
+
+  await editor.locator("[data-connect-from]").selectOption(fileId);
+  await editor.locator("[data-connect-to]").selectOption("filter");
+  await editor.getByRole("button", { name: "Disconnect" }).click();
+  await expect(editor.locator(`audio-input-file#${fileId}`)).not.toHaveAttribute("to");
+  await expect(page.getByTestId("last-operation")).toHaveText("disconnect");
+  expect(errors).toEqual([]);
+});
+
+test("overview and sidebar expose WebRTC and Graph editor samples", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/`);
+  const navigation = page.getByRole("navigation", { name: "Examples" });
+  await expect(navigation.getByRole("link", { name: "Audio: WebRTC" })).toHaveAttribute(
+    "href",
+    /\/examples\/audio-context\/webrtc\.html$/,
+  );
+  await expect(navigation.getByRole("link", { name: "Graph editor" })).toHaveAttribute(
+    "href",
+    /\/examples\/graph-editor\/$/,
+  );
+  await expect(page.locator('.example-card[href="./audio-context/webrtc.html"]')).toHaveCount(1);
+  await expect(page.locator('.example-card[href="./graph-editor/"]')).toHaveCount(1);
+});
+
+test("Graph editor sample routes recorder data through graph-event and graph-action", async ({
+  page,
+}) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/graph-editor/`);
+
+  await page.getByRole("button", { name: "Start audio graph" }).click();
+  await expect(page.getByTestId("graph-audio-state")).toHaveText("Running");
+  await page.getByRole("button", { name: "Request recorder data" }).click();
+  await expect(page.getByTestId("action-count")).not.toHaveText("0");
+  await expect(page.getByTestId("action-log")).toContainText("dataavailable");
+  await page.getByRole("button", { name: "Close audio graph" }).click();
+  await expect(page.getByTestId("graph-audio-state")).toHaveText("Closed");
+  expect(errors).toEqual([]);
+});
+
+for (const width of [375, 1280]) {
+  test(`Graph editor sample remains usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${server.httpUrl}/examples/graph-editor/`);
+
+    const editor = page.locator("graph-editor#editor");
+    await expect(editor.getByRole("button", { name: "Add Microphone" })).toBeVisible();
+    await expect(editor.locator('[aria-label="Graph canvas"]')).toBeVisible();
+    await expect(editor.locator('[aria-label="Graph node inspector"]')).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  });
+}
+
 test("focused microphone and file samples run through the context lifecycle", async ({
   page,
 }) => {
@@ -344,7 +472,9 @@ test("examples overview and sidebar navigate to the Audio example", async ({ pag
   const errors = watchPageErrors(page);
   await page.goto(`${server.httpUrl}/examples/`);
 
-  const audioCard = page.locator(".example-card").filter({ hasText: "Audio graph" });
+  const audioCard = page.locator(".example-card").filter({
+    has: page.getByRole("heading", { name: "Audio graph", exact: true }),
+  });
   await expect(audioCard).toHaveAttribute("href", "./audio-context/");
   await audioCard.click();
 

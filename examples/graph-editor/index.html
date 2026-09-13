@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Edit an extended-html declarative Audio graph visually without replacing its HTML."
+    />
+    <title>Graph editor example · extended-html</title>
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body data-page="graph-editor">
+    <a class="skip-link" href="#main-content">Skip to graph editor</a>
+    <div class="site-shell">
+      <aside class="site-sidebar" data-site-sidebar></aside>
+      <main class="site-main" id="main-content" tabindex="-1">
+        <header class="hero">
+          <p class="eyebrow">Generic graph UI · Audio adapter</p>
+          <h1>Edit HTML<br />as a graph.</h1>
+          <p class="hero-copy">
+            Drag nodes, connect ports, or use the keyboard controls. Every edit
+            changes the light-DOM custom elements, so the HTML stays portable.
+          </p>
+        </header>
+
+        <div class="example-layout">
+          <section class="panel" aria-labelledby="lifecycle-heading">
+            <h2 id="lifecycle-heading">Run the edited graph</h2>
+            <p class="audio-note" role="note">
+              <strong>Microphone permission:</strong> Starting uses your selected
+              microphone. Keep speaker volume low to avoid feedback.
+            </p>
+            <div class="socket-status" aria-live="polite">
+              <span class="status-pill">audio: <strong data-testid="graph-audio-state">Suspended</strong></span>
+              <span class="status-pill">last edit: <strong data-testid="last-operation">none</strong></span>
+              <span class="status-pill">actions: <strong data-testid="action-count">0</strong></span>
+            </div>
+            <div class="socket-actions" role="group" aria-label="Graph audio lifecycle">
+              <button class="primary" id="start" type="button">Start audio graph</button>
+              <button id="request-data" type="button" disabled>Request recorder data</button>
+              <button id="close" type="button">Close audio graph</button>
+            </div>
+            <p id="graph-error" class="field-help" role="alert"></p>
+          </section>
+
+          <section class="panel graph-example-panel" aria-label="Interactive graph editor">
+            <graph-editor id="editor">
+              <audio-context id="audio">
+                <audio-input-mic id="mic">
+                  <audio-biquad-filter id="filter" type="highpass" frequency="120">
+                    <audio-output id="speaker"></audio-output>
+                    <audio-stream-output id="recording-output">
+                      <media-recorder id="recorder"></media-recorder>
+                    </audio-stream-output>
+                  </audio-biquad-filter>
+                </audio-input-mic>
+              </audio-context>
+              <graph-event
+                id="chunk-ready"
+                from="recorder"
+                type="dataavailable"
+              ></graph-event>
+              <graph-action
+                id="save-chunk"
+                from="chunk-ready"
+                handler="SaveChunk(event)"
+              ></graph-action>
+            </graph-editor>
+          </section>
+
+          <section class="panel" aria-labelledby="action-heading">
+            <h2 id="action-heading">Event action log</h2>
+            <p class="field-help">
+              <code>&lt;graph-event&gt;</code> forwards recorder data to
+              <code>&lt;graph-action&gt;</code> through the shared detail envelope.
+            </p>
+            <ol class="event-log" data-testid="action-log" aria-live="polite"></ol>
+          </section>
+
+          <section class="panel" aria-labelledby="markup-heading">
+            <h2 id="markup-heading">Current portable HTML</h2>
+            <pre class="code-sample markup-output"><code data-testid="serialized-markup"></code></pre>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="../../src/graph/index.js"></script>
+    <script type="module" src="../assets/site.js"></script>
+    <script type="module" src="../assets/graph-editor-example.js"></script>
+  </body>
+</html>
