@@ -385,6 +385,7 @@ test("Graph editor sample keeps visual edits and declarative HTML synchronized",
   const fileId = await editor.locator("audio-context > audio-input-file").getAttribute("id");
   const outputPort = editor.locator(`[data-node-id="${fileId}"] [data-port="output"]`);
   const inputPort = editor.locator('[data-node-id="filter"] [data-port="input"]');
+  await expect(outputPort).toBeInViewport();
   const fromBox = await outputPort.boundingBox();
   const toBox = await inputPort.boundingBox();
   await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2);
@@ -428,7 +429,7 @@ test("Graph editor controls stay readable in a dark page and the default layout 
         / (Math.min(foreground, background) + 0.05);
     };
     const controls = [...root.querySelectorAll(
-      ".palette button, .toolbar button, .toolbar select, .node-select, .drag-handle, .port, .inspector button",
+      ".palette button, .toolbar button, .toolbar select, .navigator-list button, .node-select, .drag-handle, .port, .inspector button",
     )];
     const cards = new Map(
       [...root.querySelectorAll("[data-node-id]")].map((card) => [
@@ -476,6 +477,10 @@ test("Graph editor selection explains and navigates direct node relationships", 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${server.httpUrl}/examples/graph-editor/`);
   const editor = page.locator("graph-editor#editor");
+  const navigator = editor.getByRole("navigation", { name: "Graph node navigator" });
+
+  await expect(navigator.locator('[data-graph-stats]')).toHaveText("7 nodes · 6 edges");
+  await expect(navigator.locator('[data-navigate-node]')).toHaveCount(7);
 
   await editor.locator('[data-node-id="filter"] .node-select').click();
   await expect(editor.locator('[data-node-id="filter"]')).toHaveAttribute(
@@ -503,6 +508,24 @@ test("Graph editor selection explains and navigates direct node relationships", 
     "selected",
   );
   await expect(editor.locator('[data-node-id="recording-output"] .node-select')).toBeFocused();
+
+  await navigator.locator('[data-navigate-node="save-chunk"]').click();
+  await expect(editor.locator('[data-node-id="save-chunk"]')).toHaveAttribute(
+    "data-relation",
+    "selected",
+  );
+  await expect(editor.locator('[data-node-id="save-chunk"] .node-select')).toBeFocused();
+  expect(
+    await editor.evaluate((element) => {
+      const root = element.shadowRoot;
+      const node = root.querySelector('[data-node-id="save-chunk"]').getBoundingClientRect();
+      const canvas = root.querySelector(".canvas").getBoundingClientRect();
+      return node.left >= canvas.left
+        && node.right <= canvas.right
+        && node.top >= canvas.top
+        && node.bottom <= canvas.bottom;
+    }),
+  ).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -630,19 +653,39 @@ for (const width of [375, 768, 1024, 1440]) {
     await expect(editor.getByRole("button", { name: "Add Microphone" })).toBeVisible();
     await expect(editor.locator('[aria-label="Graph canvas"]')).toBeVisible();
     await expect(editor.locator('[aria-label="Graph node inspector"]')).toBeVisible();
+    await expect(editor.getByRole("navigation", { name: "Graph node navigator" })).toBeVisible();
+    await editor.locator('[data-navigate-node="save-chunk"]').click();
+    await expect(editor.locator('[data-node-id="save-chunk"] .node-select')).toBeFocused();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     expect(
       await editor.evaluate((element) => {
         const root = element.shadowRoot;
-        return [...root.querySelectorAll("[data-node-id]")].every((node) => {
-          const box = node.getBoundingClientRect();
-          const canvas = root.querySelector(".canvas").getBoundingClientRect();
-          return box.width > 0 && box.height > 0 && box.top >= canvas.top;
-        });
+        const canvas = root.querySelector(".canvas").getBoundingClientRect();
+        const selected = root.querySelector('[data-node-id="save-chunk"]')
+          .getBoundingClientRect();
+        const selectedNodeIsVisible = selected.left >= canvas.left
+          && selected.right <= canvas.right
+          && selected.top >= canvas.top
+          && selected.bottom <= canvas.bottom;
+        const navigatorTargetsAreUsable = [...root.querySelectorAll("[data-navigate-node]")]
+          .every((button) => {
+            const box = button.getBoundingClientRect();
+            return box.width >= 44 && box.height >= 44;
+          });
+        return selectedNodeIsVisible && navigatorTargetsAreUsable;
       }),
     ).toBe(true);
+    if (width === 375) {
+      expect(
+        await editor.evaluate((element) => {
+          const buttons = [...element.shadowRoot.querySelectorAll(".palette-list button")];
+          return new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().left)))
+            .size;
+        }),
+      ).toBeGreaterThanOrEqual(2);
+    }
   });
 }
 

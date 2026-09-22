@@ -56,6 +56,13 @@ it in the scrollable canvas. A polite status message announces the selection
 and relationship counts. These states belong only to the editor view and are
 never written to the declarative graph or returned by `serialize()`.
 
+The workspace Node navigator reports the total node and edge counts and keeps
+every node available as a labelled button, including nodes currently outside
+the canvas viewport. Activating a navigator button selects and reveals that
+node. Its selected and directly connected states mirror the canvas, while the
+navigator itself wraps to the available width rather than adding another
+horizontal scrolling region.
+
 The editor owns a self-contained dark color scheme so its native controls stay
 readable when it is embedded in either a light or dark document. Host pages may
 customize its published `--graph-*` color properties, but should provide a

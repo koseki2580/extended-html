@@ -178,6 +178,63 @@ describe("graph-editor", () => {
     );
   });
 
+  it("keeps every graph node discoverable and reachable from the workspace navigator", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    const sourceBeforeNavigation = editor.serialize();
+
+    const navigator = shadow.querySelector('[aria-label="Graph node navigator"]');
+    assert(navigator, "the workspace exposes a labelled node navigator");
+    assertEqual(
+      navigator.querySelector('[data-graph-stats]').textContent.trim(),
+      "7 nodes · 6 edges",
+      "the navigator summarizes graph size",
+    );
+    assertEqual(
+      navigator.querySelectorAll('[data-navigate-node]').length,
+      7,
+      "every model node has one navigation button",
+    );
+
+    navigator.querySelector('[data-navigate-node="filter"]').click();
+    await nextTask();
+    assertEqual(
+      shadow.querySelector('[data-navigate-node="filter"]').getAttribute("aria-pressed"),
+      "true",
+      "the selected node is reflected in the navigator",
+    );
+    assertEqual(
+      shadow.querySelector('[data-navigate-node="mic"]').dataset.relation,
+      "connected",
+      "direct relationships are reflected in the navigator",
+    );
+    assert(
+      shadow.querySelector('[data-navigate-node="mic"]').textContent.includes("Connected"),
+      "relationship meaning is visible without relying on color",
+    );
+    assert(
+      shadow.querySelector('[data-navigate-node="mic"]').getAttribute("aria-label")
+        .includes("Connected to selected node"),
+      "relationship meaning is included in the accessible name",
+    );
+
+    shadow.querySelector('[data-navigate-node="save"]').click();
+    await nextTask();
+    await waitForLayout();
+    assertEqual(
+      shadow.querySelector('[data-node-id="save"]').dataset.relation,
+      "selected",
+      "an off-screen node becomes the canvas selection",
+    );
+    assertEqual(
+      shadow.activeElement?.closest("[data-node-id]")?.dataset.nodeId,
+      "save",
+      "focus follows navigator activation to the canvas node",
+    );
+    assertEqual(editor.serialize(), sourceBeforeNavigation, "navigation is view-only");
+  });
+
   it("edits event and action configuration without routing it through the Audio adapter", async () => {
     const editor = createEditor();
     await nextTask();

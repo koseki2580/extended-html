@@ -102,7 +102,7 @@ export const graphEditorStyles = `
   .workspace {
     background: var(--graph-canvas);
     display: grid;
-    grid-template-rows: auto minmax(30rem, 1fr);
+    grid-template-rows: auto auto minmax(30rem, 1fr);
     min-width: 0;
   }
   .toolbar {
@@ -138,12 +138,84 @@ export const graphEditorStyles = `
     font-weight: 750;
   }
 
+  .navigator {
+    background: #0d1829;
+    border-block-end: 1px solid var(--graph-border);
+    padding: .65rem .75rem .75rem;
+  }
+  .navigator-heading {
+    align-items: baseline;
+    display: flex;
+    gap: .75rem;
+    justify-content: space-between;
+    margin-block-end: .5rem;
+  }
+  .navigator-heading strong { font-size: .76rem; }
+  .navigator-heading small { color: var(--graph-muted); font-size: .68rem; }
+  .navigator-list {
+    display: grid;
+    gap: .35rem;
+    grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  }
+  .navigator-list button {
+    align-items: center;
+    background: var(--graph-panel-raised);
+    border: 1px solid var(--graph-border);
+    border-radius: .55rem;
+    color: var(--graph-text);
+    display: grid;
+    gap: .45rem;
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    min-block-size: 2.75rem;
+    padding: .35rem .45rem;
+    text-align: start;
+  }
+  .navigator-list button:hover { background: #1e304a; border-color: var(--graph-accent); }
+  .navigator-list button[data-relation="selected"] {
+    border-color: var(--graph-accent);
+    box-shadow: inset 0 0 0 2px rgb(56 189 248 / .28);
+  }
+  .navigator-list button[data-relation="connected"] { border-width: 2px; }
+  .navigator-list button[data-relation="unrelated"] { filter: saturate(.45); }
+  .navigator-list strong, .navigator-list small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .navigator-list strong { font-size: .72rem; }
+  .navigator-list small { color: var(--graph-muted); font-size: .62rem; }
+  .navigator-icon {
+    align-items: center;
+    background: #203552;
+    border: 1px solid #47617f;
+    border-radius: .4rem;
+    color: var(--graph-accent-strong);
+    display: inline-flex;
+    height: 1.75rem;
+    justify-content: center;
+    width: 1.75rem;
+  }
+  .navigator-icon svg {
+    fill: none;
+    height: 1rem;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+    width: 1rem;
+  }
+
   .canvas {
+    --scrollbar-thumb: var(--graph-border-strong);
+    --scrollbar-track: var(--graph-canvas);
     min-height: 30rem;
     overflow: auto;
     overscroll-behavior: contain;
     position: relative;
-    scrollbar-color: var(--graph-border-strong) var(--graph-canvas);
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
   }
   .canvas-surface {
     background-image:
@@ -188,6 +260,9 @@ export const graphEditorStyles = `
     touch-action: none;
     user-select: none;
     width: 10rem;
+  }
+  .node, .navigator-list button, .canvas-surface > svg > path {
+    transition: border-color .18s ease, box-shadow .18s ease, filter .18s ease, opacity .18s ease, stroke .18s ease;
   }
   .node:has(.node-select[aria-pressed="true"]) {
     border-color: var(--graph-accent);
@@ -331,16 +406,17 @@ export const graphEditorStyles = `
     .palette, .inspector { border-inline: 0; }
     .palette { border-block-end: 1px solid var(--graph-border); }
     .inspector { grid-column: auto; }
-    .palette-list { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+    .palette-list { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
     .toolbar { grid-template-columns: auto minmax(0, 1fr); }
     .toolbar-heading, .toolbar-actions { grid-column: 1 / -1; }
     .toolbar-arrow { display: none; }
     .toolbar-actions button { flex: 1; }
-    .workspace { grid-template-rows: auto 30rem; }
+    .workspace { grid-template-rows: auto auto 30rem; }
   }
 
   @media (pointer: coarse) {
-    .palette button, .toolbar button, .toolbar select, .drag-handle, .node-select, .port {
+    .palette button, .toolbar button, .toolbar select, .navigator-list button,
+    .drag-handle, .node-select, .port {
       min-block-size: 2.75rem;
       min-inline-size: 2.75rem;
     }
@@ -348,9 +424,19 @@ export const graphEditorStyles = `
 
   @media (forced-colors: active) {
     .layout, .palette, .inspector, .toolbar, .node, .palette button,
-    .toolbar button, .toolbar select, .fields input, .port {
+    .toolbar button, .toolbar select, .navigator-list button, .fields input, .port {
       border-color: CanvasText;
     }
     .node:has(.node-select[aria-pressed="true"]) { outline: 3px solid Highlight; }
+  }
+
+  @media (prefers-contrast: more) {
+    .canvas { --scrollbar-thumb: #f8fafc; --scrollbar-track: #020617; }
+    .navigator-list button[data-relation="selected"],
+    .navigator-list button[data-relation="connected"] { outline: 2px solid var(--graph-text); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node, .navigator-list button, .canvas-surface > svg > path { transition: none; }
   }
 `;

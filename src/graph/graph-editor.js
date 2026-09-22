@@ -296,6 +296,7 @@ export class GraphEditorElement extends HTMLElement {
           </aside>
           <section class="workspace" aria-label="Graph canvas">
             ${this.#toolbarMarkup()}
+            ${this.#navigatorMarkup(selected, relatedIds)}
             <div class="canvas" tabindex="0" aria-label="Scrollable graph drawing area">
               <div class="canvas-surface" style="--canvas-width:${canvasWidth}px;--canvas-height:${canvasHeight}px">
                 <svg aria-hidden="true" preserveAspectRatio="none">
@@ -351,6 +352,38 @@ export class GraphEditorElement extends HTMLElement {
           <button type="button" data-action="disconnect">Disconnect</button>
         </div>
       </div>
+    `;
+  }
+
+  #navigatorMarkup(selected, relatedIds) {
+    return `
+      <nav class="navigator" aria-label="Graph node navigator">
+        <div class="navigator-heading">
+          <strong>Node navigator</strong>
+          <small data-graph-stats>${this.#model.nodes.length} nodes · ${this.#model.edges.length} edges</small>
+        </div>
+        <div class="navigator-list">
+          ${this.#model.nodes.map((node) => {
+            const relation = node.id === selected?.id
+              ? "selected"
+              : relatedIds.has(node.id) ? "connected" : selected ? "unrelated" : "none";
+            const relationLabel = relation === "selected"
+              ? "Selected · "
+              : relation === "connected" ? "Connected · " : "";
+            const relationDescription = relation === "selected"
+              ? " Selected node."
+              : relation === "connected" ? " Connected to selected node." : "";
+            return `
+              <button type="button" data-navigate-node="${escapeHtml(node.id)}"
+                data-relation="${relation}" aria-pressed="${node.id === selected?.id}"
+                aria-label="Show ${escapeHtml(node.label)} ${escapeHtml(node.id)} in canvas.${relationDescription}">
+                <span class="navigator-icon">${iconMarkup(node.kind)}</span>
+                <span><strong>${escapeHtml(node.label)}</strong><small>${relationLabel}#${escapeHtml(node.id)}</small></span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      </nav>
     `;
   }
 
@@ -414,6 +447,11 @@ export class GraphEditorElement extends HTMLElement {
   }
 
   #handleClick = (event) => {
+    const navigatorButton = event.target.closest("[data-navigate-node]");
+    if (navigatorButton) {
+      this.#selectNode(navigatorButton.dataset.navigateNode, true);
+      return;
+    }
     const relatedButton = event.target.closest("[data-related-id]");
     if (relatedButton) {
       this.#selectNode(relatedButton.dataset.relatedId, true);
@@ -432,6 +470,7 @@ export class GraphEditorElement extends HTMLElement {
       this.#run(() => {
         const element = this.addNode(addButton.dataset.addNode, options);
         this.#selectedId = element.id;
+        requestAnimationFrame(() => this.#revealNode(element.id));
       });
       return;
     }
@@ -566,9 +605,14 @@ export class GraphEditorElement extends HTMLElement {
     const card = [...this.shadowRoot.querySelectorAll("[data-node-id]")]
       .find((candidate) => candidate.dataset.nodeId === id);
     card?.querySelector(".node-select")?.focus();
-    if (reveal && card) {
-      requestAnimationFrame(() => card.scrollIntoView({ block: "nearest", inline: "nearest" }));
-    }
+    if (reveal) requestAnimationFrame(() => this.#revealNode(id));
+  }
+
+  #revealNode(id) {
+    const card = [...this.shadowRoot.querySelectorAll("[data-node-id]")]
+      .find((candidate) => candidate.dataset.nodeId === id);
+    card?.querySelector(".node-select")?.focus();
+    card?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   #setOrchestrationProperty(element, name, value) {
