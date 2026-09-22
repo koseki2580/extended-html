@@ -90,3 +90,10 @@
 - **Rule:** Audit computed foreground/background contrast for native controls inside shadow roots under both host color schemes.
 - **Why:** `toBeVisible()` proves geometry, not readable pixels, and user-agent control colors can ignore assumed inheritance.
 - **Apply-when:** Styling reusable custom elements with buttons, inputs, or selects.
+
+## Make the whole spatial model discoverable
+
+- **What happened:** Relationship highlighting clarified selected cards, but off-screen nodes still required blind canvas exploration.
+- **Rule:** Give spatial editors an always-visible model navigator, and reveal newly selected or created items inside the canvas viewport.
+- **Why:** Selection clarity cannot help users discover content they cannot see or reach predictably.
+- **Apply-when:** Building graph, canvas, workflow, timeline, or other spatial editors.
