@@ -118,3 +118,17 @@
 - **Rule:** Before pushing, run the exact CI aggregate command; encode required concurrency limits in package scripts instead of local-only flags.
 - **Why:** Faster focused runs can hide resource contention that the published workflow will encounter.
 - **Apply-when:** Adding browser, Worker, media, or timing-sensitive tests to a CI suite.
+
+## Count only completed independent UX audits
+
+- **What happened:** The user requested five distinct UX agents; several initial agents hit a usage limit before returning findings.
+- **Rule:** Count only completed, evidence-backed audits and retry failed contexts before claiming the requested coverage.
+- **Why:** Agent launches are not equivalent to independent validation.
+- **Apply-when:** Coordinating parallel UX, accessibility, or cross-device review.
+
+## Validate touch gestures in a real browser
+
+- **What happened:** Synthetic pointer tests passed while touch pointer capture retargeted release events and a canvas trapped page scrolling.
+- **Rule:** Exercise touch drags and scroll chaining at mobile widths in a browser, then keep their reproductions as E2E tests.
+- **Why:** Programmatic events do not model pointer capture or native scrolling accurately.
+- **Apply-when:** Shipping drag, pan, port, or nested scrolling interactions.
