@@ -98,6 +98,13 @@
 - **Why:** Selection clarity cannot help users discover content they cannot see or reach predictably.
 - **Apply-when:** Building graph, canvas, workflow, timeline, or other spatial editors.
 
+## Keep spatial nodes stable when an edge is removed
+
+- **What happened:** Disconnecting an action recomputed its layout at the first column, leaving its former source too far away for a pointer reconnection.
+- **Rule:** Preserve an editor node's current coordinates when removing its edge; let users move it explicitly afterward.
+- **Why:** A topology edit should not unexpectedly move the target or make the next edit harder.
+- **Apply-when:** Implementing connection removal in auto-laid-out graph or workflow editors.
+
 ## Preserve editor focus across queued renders
 
 - **What happened:** An invalid Inspector edit focused its replacement input, then a queued MutationObserver render removed that focused element.
