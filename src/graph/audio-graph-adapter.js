@@ -229,6 +229,9 @@ export const audioGraphAdapter = {
     const hadAttribute = from.hasAttribute("to");
     const previous = from.getAttribute("to");
     const targets = previous?.trim().split(/\s+/).filter(Boolean) ?? [];
+    if (!targets.includes(to.id)) {
+      throw new DOMException(`No explicit connection from #${from.id} to #${to.id}; nested edges cannot be disconnected`, "NotFoundError");
+    }
     const remaining = targets.filter((id) => id !== to.id);
     if (remaining.length > 0) from.setAttribute("to", remaining.join(" "));
     else from.removeAttribute("to");

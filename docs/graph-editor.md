@@ -45,6 +45,16 @@ The built-in view has three regions:
   values.
 
 The From/To controls provide a keyboard-accessible equivalent to port dragging.
+They edit explicit cross-tree `to` references or action `from` references;
+nesting edges cannot be disconnected through them. Missing references report
+an error without claiming a change.
+An output port can also be activated, followed by an input port, to connect
+nodes without a drag gesture. The editor announces the pending source; Escape
+cancels it. A pointer drag uses the port under the release coordinates, even
+on touch devices that capture the pointer at the source. Ordinary touch swipes
+on node cards pan the canvas; dragging is limited to the Move handle. With
+keyboard focus on a Move handle, arrow keys move the node by 16 CSS pixels
+(or one pixel while Shift is held).
 All graph changes update the original light DOM. `serialize()` returns that
 current HTML.
 
@@ -61,7 +71,14 @@ every node available as a labelled button, including nodes currently outside
 the canvas viewport. Activating a navigator button selects and reveals that
 node. Its selected and directly connected states mirror the canvas, while the
 navigator itself wraps to the available width rather than adding another
-horizontal scrolling region.
+horizontal scrolling region. Large navigator lists scroll inside a bounded
+area so they cannot collapse the drawing canvas. Viewport and navigator scroll
+positions survive ordinary editor redraws. Arrow keys and Home/End move focus
+through navigator buttons; Escape from a canvas node returns focus to its
+navigator entry. When a graph has more than twelve nodes, the same bounded
+navigator area can switch to a read-only whole-graph overview showing nodes and
+edges; the node list remains the keyboard-operable way to reveal a specific
+node. Switching views does not change the graph HTML or shrink the canvas.
 
 The editor owns a self-contained dark color scheme so its native controls stay
 readable when it is embedded in either a light or dark document. Host pages may
@@ -81,7 +98,7 @@ The public mutation methods are:
 | Method | Result |
 | --- | --- |
 | `addNode(localName, { parent? })` | Adds a supported node and returns its element. |
-| `removeNode(element)` | Removes a node and dangling `to` references. |
+| `removeNode(element)` | Removes an Audio leaf through its adapter, or a leaf `<graph-event>`/`<graph-action>`. Audio nodes with graph children and orchestration nodes with dependent events/actions are rejected without changing the graph; remove dependents first. |
 | `connect(from, to)` | Adds a validated cross-tree edge. |
 | `disconnect(from, to)` | Removes a cross-tree edge. |
 | `setProperty(element, name, value)` | Applies an adapter or orchestration attribute transactionally. |
@@ -92,6 +109,10 @@ The public mutation methods are:
 
 Failed operations dispatch `error`, throw the original error from the public
 method, and preserve the previous valid DOM.
+Successful toolbar and Inspector operations announce their result. After the
+view updates, keyboard focus stays on the equivalent control, or moves to a
+remaining node navigator control (the visible Overview control when that view
+is open) when the focused node was removed.
 
 ## Function registry
 
@@ -144,6 +165,10 @@ event name, function name, and description.
 3. Select that event and activate a registered function. The editor creates a
    connected `<graph-action>` using the stable handler reference.
 
+Selecting the same registered function again from the same source in the
+palette reveals its existing action instead of silently creating an identical
+branch. The public `addAction()` method still permits deliberate duplicates.
+
 Unavailable operations remain keyboard-focusable with `aria-disabled` and a
 visible reason. Activating one announces that reason near the panel instead of
 attempting an invalid mutation. Mutation errors appear in the same polite
@@ -156,6 +181,9 @@ allows creating an action before entering a registered or legacy handler referen
 in the Inspector. Invalid edits preserve the draft and show a field-specific error
 while the graph retains its last valid value. Correcting the field clears the error.
 Runtime and editing errors also appear below the editor, even when the trays are closed.
+If the editor cannot render because its registered graph root is missing or
+invalid, it shows an in-component error with a recovery instruction and
+automatically retries after its light DOM changes.
 
 ## Event and action nodes
 
@@ -274,7 +302,11 @@ The handler value is a reference, not a JavaScript body. The editor never uses
 `eval` or `new Function`; arbitrary implementation code remains reviewable in
 the imported module. The runnable [custom handler example](https://koseki2580.github.io/extended-html/examples/graph-editor/custom-handler.html)
 shows a Blob converted to a summary and passed into a second action. It also
-demonstrates adding another action through the visual editor.
+demonstrates adding another action through the visual editor. Its results panel
+observes every action's `run` and `data` events, including newly registered
+functions, and names the action for each input/output entry. Closing the
+example's Audio context is terminal for that instance; its Restart control
+creates a fresh context while preserving the graph editor's current HTML.
 
 ## Adapter contract
 

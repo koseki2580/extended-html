@@ -1,10 +1,11 @@
 const editor = document.querySelector("#handler-editor");
-const audio = document.querySelector("#handler-audio");
-const tone = document.querySelector("#tone");
-const recorder = document.querySelector("#recorder");
+let audio = document.querySelector("#handler-audio");
+let tone = document.querySelector("#tone");
+let recorder = document.querySelector("#recorder");
 const start = document.querySelector("#start-handler");
 const requestData = document.querySelector("#request-handler-data");
 const close = document.querySelector("#close-handler");
+const restart = document.querySelector("#restart-handler");
 const state = document.querySelector('[data-testid="handler-audio-state"]');
 const measureCount = document.querySelector('[data-testid="measure-count"]');
 const auditCount = document.querySelector('[data-testid="audit-count"]');
@@ -49,37 +50,54 @@ const createToneUrl = () => {
   return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 };
 
-const appendResult = (handler, event) => {
+const appendResult = (action, phase, event) => {
   const data = event.detail.data;
   const item = document.createElement("li");
   const label = document.createElement("span");
   const detail = document.createElement("code");
-  label.textContent = `${handler} handler`;
-  detail.textContent = JSON.stringify({
-    data: {
-      kind: data instanceof Blob ? "Blob" : typeof data,
-      size: data instanceof Blob ? data.size : data?.size ?? null,
-      type: data instanceof Blob ? data.type : data?.type ?? null,
-    },
+  const name = action.getAttribute("handler")?.split("(")[0].trim().split(".").at(-1) ?? "Action";
+  label.textContent = `${name} handler · #${action.id} · ${phase}`;
+  const preview = {
+    data: data instanceof Blob ? { kind: "Blob", size: data.size, type: data.type } : data,
     metadata: event.detail.metadata,
-  });
+  };
+  try {
+    detail.textContent = JSON.stringify(preview);
+  } catch {
+    detail.textContent = String(data);
+  }
   item.append(label, detail);
   results.prepend(item);
 };
+
+// Action events do not bubble, so watch each current and newly added action.
+const watchedActions = new WeakSet();
+const watchActions = () => {
+  for (const action of editor.querySelectorAll(":scope > graph-action")) {
+    if (watchedActions.has(action)) continue;
+    watchedActions.add(action);
+    action.addEventListener("run", (event) => appendResult(action, "input", event));
+    action.addEventListener("data", (event) => appendResult(action, "output", event));
+  }
+};
+new MutationObserver(watchActions).observe(editor, { childList: true });
+watchActions();
 
 // Application code stays in this reviewed module; only stable references enter the graph.
 const CustomHandlers = Object.freeze({
   Measure(event) {
     measured += 1;
     measureCount.textContent = String(measured);
-    appendResult("Measure", event);
     // A returned value becomes this action's data output for connected actions.
     return { size: event.detail.data.size, type: event.detail.data.type };
   },
   Audit(event) {
     audited += 1;
     auditCount.textContent = String(audited);
-    appendResult("Audit", event);
+  },
+  Label(event) {
+    const summary = { ...event.detail.data, label: "Review" };
+    return summary;
   },
 });
 
@@ -90,6 +108,10 @@ editor.registerFunction("CustomHandlers.Measure", CustomHandlers.Measure, {
 editor.registerFunction("CustomHandlers.Audit", CustomHandlers.Audit, {
   label: "Audit recording",
   description: "Records delivery metadata",
+});
+editor.registerFunction("CustomHandlers.Label", CustomHandlers.Label, {
+  label: "Label summary",
+  description: "Adds a visible label to the Measure summary",
 });
 
 const updateMarkup = () => {
@@ -112,7 +134,10 @@ const releaseTone = () => {
 
 editor.addEventListener("ready", updateMarkup);
 editor.addEventListener("change", (event) => {
-  if (event.target === editor && event.detail?.metadata) updateMarkup();
+  if (event.target === editor && event.detail?.metadata) {
+    errorOutput.textContent = "";
+    updateMarkup();
+  }
 });
 editor.addEventListener("error", (event) => showError(event.detail.data));
 
@@ -123,6 +148,7 @@ start.addEventListener("click", async () => {
     state.textContent = "Running";
     start.disabled = true;
     requestData.disabled = false;
+    close.disabled = false;
   } catch (error) {
     showError(error);
   }
@@ -146,7 +172,36 @@ close.addEventListener("click", async () => {
     start.disabled = true;
     requestData.disabled = true;
     close.disabled = true;
+    restart.hidden = false;
     releaseTone();
+  }
+});
+
+restart.addEventListener("click", () => {
+  try {
+    // A closed AudioContext cannot resume; replace only that subtree and keep Actions.
+    const replacement = audio.cloneNode(true);
+    replacement.querySelector("#tone")?.removeAttribute("src");
+    audio.replaceWith(replacement);
+    audio = replacement;
+    tone = replacement.querySelector("#tone");
+    recorder = replacement.querySelector("#recorder");
+    toneUrl = createToneUrl();
+    tone.src = toneUrl;
+    state.textContent = "Suspended";
+    start.disabled = false;
+    requestData.disabled = true;
+    close.disabled = true;
+    restart.hidden = true;
+    measured = 0;
+    audited = 0;
+    measureCount.textContent = "0";
+    auditCount.textContent = "0";
+    results.replaceChildren();
+    errorOutput.textContent = "";
+    updateMarkup();
+  } catch (error) {
+    showError(error);
   }
 });
 

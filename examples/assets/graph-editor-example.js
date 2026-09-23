@@ -32,10 +32,14 @@ globalThis.SaveChunk = (event) => {
   actionLog.prepend(item);
 };
 
-editor.addEventListener("ready", updateMarkup);
+editor.addEventListener("ready", () => {
+  errorOutput.textContent = "";
+  updateMarkup();
+});
 editor.addEventListener("change", (event) => {
   // Ignore native controls crossing the shadow boundary; editor mutations target the host.
   if (event.target !== editor || !event.detail?.metadata) return;
+  errorOutput.textContent = "";
   operation.textContent = event.detail.metadata.operation;
   updateMarkup();
 });

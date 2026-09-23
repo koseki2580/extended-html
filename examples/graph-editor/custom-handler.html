@@ -32,28 +32,34 @@
               <h2 id="handler-code-heading">Write a reviewed handler</h2>
               <p class="field-help">
                 The implementation remains in a normal module. Registering it
-                adds a labelled Function card to this editor only.
+                adds a labelled Function card to this editor only. To use your own
+                function, edit the module, register it, reload this page, then
+                select its source and choose the new card.
               </p>
+              <a class="example-link" href="../assets/graph-handler-example.js">Open the editable JavaScript module</a>
             </div>
             <pre class="code-sample"><code data-testid="handler-source">const measure = (event) => ({
   size: event.detail.data.size,
   type: event.detail.data.type,
 });
-const audit = (event) => {
-  console.log(event.detail.data.size); // measure's output
-};
+const label = (event) => ({
+  ...event.detail.data, // measure's output
+  label: "Review",
+});
 
 editor.registerFunction("CustomHandlers.Measure", measure, {
   label: "Measure recording",
   description: "Returns the recorded Blob summary",
 });
-editor.registerFunction("CustomHandlers.Audit", audit);
+editor.registerFunction("CustomHandlers.Label", label, {
+  label: "Label summary",
+});
 
 // HTML stores the stable reference, never the function body:
 &lt;graph-action id="measure-chunk" from="chunk-ready"
   handler="CustomHandlers.Measure(event)"&gt;&lt;/graph-action&gt;
 &lt;graph-action from="measure-chunk"
-  handler="CustomHandlers.Audit(event)"&gt;&lt;/graph-action&gt;</code></pre>
+  handler="CustomHandlers.Label(event)"&gt;&lt;/graph-action&gt;</code></pre>
           </section>
 
           <section class="panel graph-example-panel" aria-labelledby="handler-editor-heading">
@@ -62,14 +68,14 @@ editor.registerFunction("CustomHandlers.Audit", audit);
                 <p class="eyebrow">Step 2 · Declarative connection</p>
                 <h2 id="handler-editor-heading">Wire it in the editor</h2>
                 <p class="field-help">
-                  Measure returns a summary to Audit. Select Measure and add
-                  another function to branch its output without typing code in HTML.
+                  Measure already feeds Audit. Select Measure and add the distinct
+                  Label function to branch its summary without duplicating Audit.
                 </p>
               </div>
               <ol class="handler-steps" aria-label="Add another registered function">
                 <li><span>1</span><div>Select <strong>Measure recording</strong></div></li>
-                <li><span>2</span><div>Choose <strong>Audit recording</strong></div></li>
-                <li><span>3</span><div>Inspect its input and output connections</div></li>
+                <li><span>2</span><div>Choose <strong>Label summary</strong> from Functions</div></li>
+                <li><span>3</span><div>Run the graph and find <strong>Label handler</strong> below</div></li>
               </ol>
             </div>
             <p class="graph-scroll-hint">
@@ -117,16 +123,19 @@ editor.registerFunction("CustomHandlers.Audit", audit);
             <div class="socket-actions" role="group" aria-label="Custom handler lifecycle">
               <button class="primary" id="start-handler" type="button">Start handler graph</button>
               <button id="request-handler-data" type="button" disabled>Request handler data</button>
-              <button id="close-handler" type="button">Close handler graph</button>
+              <button id="close-handler" type="button" disabled>Close handler graph</button>
+              <button id="restart-handler" type="button" hidden>Restart handler graph</button>
             </div>
+            <p class="field-help">Close is terminal for this Audio context. Restart keeps your editor nodes and connections.</p>
             <p id="handler-error" class="field-help" role="alert"></p>
           </section>
 
           <section class="panel" aria-labelledby="handler-results-heading">
             <h2 id="handler-results-heading">Application results</h2>
             <p class="field-help">
-              Measure receives a Blob; Audit receives its returned summary.
-              Entries retain the original browser event and identify the producing action.
+              Measure receives a Blob; Audit and the optional Label branch receive
+              its returned summary. Every Action, including one you register,
+              appears here with its node ID, input, output, and source metadata.
             </p>
             <ol class="event-log handler-results" data-testid="handler-results" aria-live="polite"></ol>
           </section>

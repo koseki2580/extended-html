@@ -339,7 +339,9 @@ outputButton.addEventListener("click", async () =&gt; {
   &lt;/audio-context&gt;
 &lt;/graph-editor&gt;</code></pre>
           <p>
-            output portからinput portへdragするか、From/Toのkeyboard操作で接続します。
+            output portからinput portへドラッグするか、outputとinputを順に選択するか、
+            From/Toのキーボード操作で接続します。Moveハンドルは矢印キーでも移動できます。
+            親ノードを削除する前に、子ノードと依存ノードを削除してください。
             node編集は<code>change</code>、<code>nodeadd</code>、<code>nodechange</code>、
             edge eventを<code>event.detail.data</code>と
             <code>event.detail.metadata</code>の形式で通知します。
@@ -363,6 +365,13 @@ const unregister = editor.registerFunction("Audit", (event) =&gt; {
             <strong>Audit recording</strong>を選ぶと、イベントとアクションのノードが作成・接続されます。
             Add nodesパネルでは名前や説明で検索できます。追加できない項目には、
             先にどのノードを選ぶ必要があるか表示されます。
+          </p>
+          <p>
+            任意の処理を追加するときは、ページが読み込むJavaScriptモジュールに関数と
+            <code>editor.registerFunction()</code>を書きます。ページを再読み込みし、
+            入力元となるEventまたはActionを選んでFunctionsから新しいカードを選びます。
+            <a href="../../examples/assets/graph-handler-example.js">動作するサンプルのモジュール</a>に
+            登録方法と結果表示の実装があります。HTMLには関数本体ではなく参照だけを保存します。
           </p>
           <p>
             Actionを選んで次の関数を追加すると、関数を連結できます。各Actionには暗黙の入力と出力が

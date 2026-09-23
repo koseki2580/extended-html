@@ -211,10 +211,58 @@ export const graphEditorStyles = `
   }
   .navigator-heading strong { font-size: .76rem; }
   .navigator-heading small { color: var(--graph-muted); font-size: .68rem; }
+  .navigator-hint { color: var(--graph-muted); font-size: .72rem; margin: 0 0 .45rem; }
+  .navigator-view-controls { display: flex; gap: .35rem; margin-block-end: .45rem; }
+  .navigator-view-controls button {
+    background: var(--graph-panel-raised);
+    border: 1px solid var(--graph-border);
+    border-radius: .45rem;
+    color: var(--graph-text);
+    min-block-size: 2.75rem;
+    padding: .3rem .7rem;
+  }
+  .navigator-view-controls button[aria-pressed="true"] {
+    border-color: var(--graph-accent);
+    box-shadow: inset 0 0 0 1px var(--graph-accent);
+  }
+  .overview-map {
+    background: var(--graph-canvas);
+    border: 1px solid var(--graph-border);
+    border-radius: .45rem;
+    display: block;
+    height: 8.5rem;
+    width: 100%;
+  }
+  .overview-map line {
+    stroke: var(--graph-accent-strong);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .overview-map line[data-kind="event"], .overview-map line[data-kind="action"] {
+    stroke: #c084fc;
+  }
+  .overview-map rect {
+    fill: #285176;
+    stroke: var(--graph-accent-strong);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .overview-map rect[data-kind="event"], .overview-map rect[data-kind="action"] {
+    fill: #66358a;
+    stroke: #e9b7ff;
+  }
+  .overview-map rect[data-selected="true"] {
+    fill: #fbbf24;
+    stroke: #fff7d1;
+    stroke-width: 4;
+  }
   .navigator-list {
     display: grid;
     gap: .35rem;
     grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+    max-block-size: 8.5rem;
+    overflow-y: auto;
+    scrollbar-color: var(--graph-border-strong) var(--graph-panel);
   }
   .navigator-list button {
     align-items: center;
@@ -238,12 +286,10 @@ export const graphEditorStyles = `
   .navigator-list button[data-relation="unrelated"] { filter: saturate(.45); }
   .navigator-list strong, .navigator-list small {
     display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .navigator-list strong { font-size: .72rem; }
-  .navigator-list small { color: var(--graph-muted); font-size: .62rem; }
+  .navigator-list small { color: var(--graph-muted); font-size: .75rem; }
   .navigator-icon {
     align-items: center;
     background: #203552;
@@ -270,7 +316,8 @@ export const graphEditorStyles = `
     --scrollbar-track: var(--graph-canvas);
     min-height: 0;
     overflow: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
     position: relative;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     scrollbar-gutter: stable;
@@ -316,7 +363,6 @@ export const graphEditorStyles = `
     padding: .45rem;
     position: absolute;
     top: var(--node-y);
-    touch-action: none;
     user-select: none;
     width: 10rem;
   }
@@ -364,6 +410,7 @@ export const graphEditorStyles = `
     min-block-size: 2.75rem;
     min-inline-size: 2.75rem;
     padding: 0;
+    touch-action: none;
   }
   .drag-handle:active { cursor: grabbing; }
   .drag-handle svg { fill: currentColor; stroke: none; }
@@ -413,6 +460,13 @@ export const graphEditorStyles = `
     min-block-size: 2.75rem;
     min-inline-size: 2.75rem;
     padding: 0;
+    touch-action: none;
+  }
+  .port[aria-pressed="true"] {
+    background: var(--graph-accent);
+    color: var(--graph-canvas);
+    outline: 3px solid var(--graph-accent-strong);
+    outline-offset: 2px;
   }
 
   .field { display: grid; gap: .3rem; }
@@ -459,6 +513,13 @@ export const graphEditorStyles = `
   .fields input[aria-invalid="true"] { border-color: var(--graph-danger); }
   .field-error { color: var(--graph-danger); font-size: .7rem; }
   .empty { color: var(--graph-muted); }
+  .render-error {
+    background: var(--graph-panel);
+    border: 1px solid var(--graph-danger);
+    border-radius: .9rem;
+    color: var(--graph-text);
+    padding: 1rem;
+  }
   .danger { color: var(--graph-danger); margin-top: 1rem; padding: .5rem .7rem; width: 100%; }
 
   @container (max-width: 75rem) {

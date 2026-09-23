@@ -355,7 +355,9 @@ outputButton.addEventListener("click", async () =&gt; {
   &lt;/audio-context&gt;
 &lt;/graph-editor&gt;</code></pre>
           <p>
-            Drag output ports to input ports or use the From/To keyboard controls.
+            Drag output ports to input ports, activate an output then an input,
+            or use the From/To keyboard controls. Move handles also accept arrow
+            keys. Remove child and dependent nodes before removing a parent.
             Node edits dispatch <code>change</code>, <code>nodeadd</code>,
             <code>nodechange</code>, and edge events using
             <code>event.detail.data</code> and <code>event.detail.metadata</code>.
@@ -380,6 +382,15 @@ const unregister = editor.registerFunction("Audit", (event) =&gt; {
             editor creates and connects the event and action nodes. Search the
             Add nodes panel by name or description; unavailable choices explain
             which node to select first.
+          </p>
+          <p>
+            To add your own processing, put the function and its
+            <code>editor.registerFunction()</code> call in a JavaScript module
+            imported by your page. Reload, select the event or action that
+            should feed it, and choose its Function card. The
+            <a href="../../examples/assets/graph-handler-example.js">runnable example module</a>
+            shows the exact registration and result display; the HTML keeps only
+            the handler reference.
           </p>
           <p>
             Select an Action and add another function to chain them. Each Action

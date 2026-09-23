@@ -96,6 +96,18 @@ describe("graph-editor", () => {
     );
     addToggle.click();
     assertEqual(addToggle.getAttribute("aria-expanded"), "true", "the add tray can expand");
+    assert(addToggle.textContent.includes("ready"), "the collapsed palette distinguishes usable items from all shown items");
+  });
+
+  it("explains invalid initial markup inside the editor and recovers after a root is added", async () => {
+    const editor = document.createElement("graph-editor");
+    document.body.append(editor);
+    await nextTask();
+    const alert = editor.shadowRoot.querySelector('[role="alert"]');
+    assert(alert?.textContent.includes("one direct"), "a missing root has a visible recovery instruction");
+    editor.innerHTML = '<audio-context id="new-audio"><audio-input-file id="file"></audio-input-file></audio-context>';
+    await nextTask();
+    assert(editor.shadowRoot.querySelector('[data-node-id="file"]'), "adding the root recovers the editor");
   });
 
   it("assigns persistent ids when source markup omits graph node ids", async () => {
@@ -435,6 +447,104 @@ describe("graph-editor", () => {
     assertEqual(editor.serialize(), sourceBeforeNavigation, "navigation is view-only");
   });
 
+  it("keeps the drawing area usable and navigation position stable in a large graph", async () => {
+    const editor = createEditor();
+    let source = "save";
+    for (let index = 0; index < 26; index += 1) {
+      const action = document.createElement("graph-action");
+      action.id = `step-${index}`;
+      action.setAttribute("from", source);
+      action.setAttribute("handler", "Step(event)");
+      editor.append(action);
+      source = action.id;
+    }
+    await nextTask();
+    await waitForLayout();
+    const shadow = editor.shadowRoot;
+    const canvas = shadow.querySelector(".canvas");
+    let navigator = shadow.querySelector(".navigator-list");
+    assert(canvas.clientHeight >= 240, "large navigation does not collapse the canvas");
+    assert(navigator.scrollHeight > navigator.clientHeight, "the navigator scrolls within a bounded region");
+    const overviewButton = shadow.querySelector('[data-navigator-view="overview"]');
+    assert(overviewButton, "large graphs expose a whole-graph overview");
+    overviewButton.click();
+    assertEqual(overviewButton.getAttribute("aria-pressed"), "true", "the overview is selected");
+    assertEqual(shadow.querySelector(".overview-map").hasAttribute("hidden"), false, "the SVG overview actually becomes visible");
+    overviewButton.focus();
+    editor.registerFunction("Workspace.OverviewFocus", () => {});
+    await nextTask();
+    await waitForLayout();
+    assertEqual(shadow.activeElement?.dataset.navigatorView, "overview", "overview toggle retains focus after redraw");
+    assertEqual(shadow.querySelectorAll(".overview-map [data-overview-edge]").length, 32, "the overview shows all connections");
+    assert(shadow.querySelector(".canvas").clientHeight >= 240, "opening the overview keeps the canvas usable");
+    shadow.querySelector('[data-navigator-view="nodes"]').click();
+    navigator = shadow.querySelector(".navigator-list");
+    navigator.scrollTop = navigator.scrollHeight;
+    const navBefore = navigator.scrollTop;
+    shadow.querySelector(".canvas").scrollLeft = 250;
+    editor.registerFunction("Workspace.Review", () => {});
+    await nextTask();
+    assert(shadow.querySelector(".navigator-list").scrollTop >= navBefore - 2, "navigation scroll survives redraw");
+    assertEqual(shadow.querySelector(".canvas").scrollLeft, 250, "canvas viewport survives unrelated redraw");
+  });
+
+  it("returns keyboard focus from a distant canvas node to its navigator entry", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    shadow.querySelector('[data-navigate-node="save"]').click();
+    await nextTask();
+    const selected = shadow.querySelector('[data-node-id="save"] .node-select');
+    assertEqual(shadow.activeElement, selected, "navigator activation focuses the canvas node");
+    selected.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assertEqual(shadow.activeElement?.dataset.navigateNode, "save", "Escape returns directly to navigator");
+    shadow.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    assertEqual(shadow.activeElement?.dataset.navigateNode, "mic", "Home reaches the first node without repeated Tab presses");
+    const columns = getComputedStyle(shadow.querySelector(".navigator-list")).gridTemplateColumns.split(" ").length;
+    shadow.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    assertEqual(
+      shadow.activeElement?.dataset.navigateNode,
+      shadow.querySelectorAll("[data-navigate-node]")[columns]?.dataset.navigateNode,
+      "ArrowDown follows the visual grid column",
+    );
+  });
+
+  it("returns from the canvas even when the large-graph overview is visible", async () => {
+    const editor = createEditor();
+    for (let index = 0; index < 7; index += 1) {
+      const file = document.createElement("audio-input-file");
+      file.id = `extra-${index}`;
+      editor.querySelector("audio-context").append(file);
+    }
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    shadow.querySelector('[data-navigator-view="overview"]').click();
+    const mic = shadow.querySelector('[data-node-id="mic"] .node-select');
+    mic.focus();
+    mic.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assertEqual(shadow.activeElement?.dataset.navigateNode, "mic", "Escape makes the node list visible and focuses the matching entry");
+    assertEqual(shadow.querySelector('[data-navigator-view="nodes"]').getAttribute("aria-pressed"), "true", "the node list is the active view");
+  });
+
+  it("keeps focus visible when a node is removed with the overview open", async () => {
+    const editor = createEditor();
+    for (let index = 0; index < 7; index += 1) {
+      const file = document.createElement("audio-input-file");
+      file.id = `extra-${index}`;
+      editor.querySelector("audio-context").append(file);
+    }
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    shadow.querySelector('[data-node-id="extra-6"] .node-select').click();
+    await nextTask();
+    shadow.querySelector('[data-navigator-view="overview"]').click();
+    const remove = shadow.querySelector('[data-action="remove"]');
+    remove.focus();
+    remove.click();
+    await nextTask();
+    assertEqual(shadow.activeElement?.dataset.navigatorView, "overview", "focus falls back to the visible overview control");
+  });
+
   it("edits event and action configuration without routing it through the Audio adapter", async () => {
     const editor = createEditor();
     await nextTask();
@@ -483,13 +593,143 @@ describe("graph-editor", () => {
     const shadow = editor.shadowRoot;
     shadow.querySelector('[data-connect-from]').value = "music";
     shadow.querySelector('[data-connect-to]').value = "filter";
+    shadow.querySelector('[data-action="connect"]').focus();
     shadow.querySelector('[data-action="connect"]').click();
     await nextTask();
     assertEqual(music.getAttribute("to"), "filter", "keyboard form connects nodes");
+    assertEqual(shadow.activeElement?.dataset.action, "connect", "connect retains keyboard focus");
+    assert(shadow.querySelector("[data-editor-status]").textContent.includes("connected"), "connection is announced");
 
+    shadow.querySelector('[data-action="disconnect"]').focus();
     shadow.querySelector('[data-action="disconnect"]').click();
     await nextTask();
     assertEqual(music.hasAttribute("to"), false, "keyboard form disconnects nodes");
+    assertEqual(shadow.activeElement?.dataset.action, "disconnect", "disconnect retains keyboard focus");
+  });
+
+  it("keeps pending toolbar endpoint choices while the user inspects another node", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    const from = shadow.querySelector("[data-connect-from]");
+    const to = shadow.querySelector("[data-connect-to]");
+    from.value = "mic";
+    to.value = "filter";
+    from.dispatchEvent(new Event("change", { bubbles: true }));
+    to.dispatchEvent(new Event("change", { bubbles: true }));
+    shadow.querySelector('[data-navigate-node="filter"]').click();
+    await nextTask();
+    assertEqual(shadow.querySelector("[data-connect-from]").value, "mic", "source survives redraw");
+    assertEqual(shadow.querySelector("[data-connect-to]").value, "filter", "target survives redraw");
+  });
+
+  it("removes only leaf event and action nodes without orphaning dependents", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const event = editor.querySelector("#chunk");
+    const action = editor.querySelector("#save");
+    let failure;
+    try {
+      editor.removeNode(event);
+    } catch (error) {
+      failure = error;
+    }
+    assert(failure instanceof DOMException, "a depended-on event cannot be removed");
+    assertEqual(event.parentElement, editor, "rejected removal preserves the event");
+    const changes = [];
+    editor.addEventListener("noderemove", (change) => changes.push(change.detail.data));
+    editor.shadowRoot.querySelector('[data-node-id="save"] .node-select').click();
+    await nextTask();
+    const remove = editor.shadowRoot.querySelector('[data-action="remove"]');
+    assert(remove, "a leaf action exposes Remove in the Inspector");
+    remove.focus();
+    remove.click();
+    await nextTask();
+    assertEqual(action.parentElement, null, "the leaf action is removed");
+    assertEqual(changes[0], action, "the removal event exposes the removed element");
+    assert(editor.shadowRoot.activeElement?.matches('[data-navigate-node]'), "focus moves to an existing navigation control");
+    assert(editor.shadowRoot.querySelector('[data-editor-status]').textContent.includes("removed"), "removal is announced");
+    editor.removeNode(event);
+    await nextTask();
+    assertEqual(event.parentElement, null, "the former event becomes removable after its dependent is removed");
+  });
+
+  it("does not silently delete an Audio subtree that a graph event depends on", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const filter = editor.querySelector("#filter");
+    let failure;
+    try {
+      editor.removeNode(filter);
+    } catch (error) {
+      failure = error;
+    }
+    assert(failure instanceof DOMException, "branch removal requires removing descendants first");
+    assertEqual(editor.querySelector("#recorder")?.id, "recorder", "the recorder and its event source survive");
+    editor.shadowRoot.querySelector('[data-node-id="filter"] .node-select').click();
+    await nextTask();
+    assert(editor.shadowRoot.querySelector('[data-action="remove"]').disabled, "the unsafe Inspector action is disabled");
+    assert(editor.shadowRoot.querySelector(".inspector").textContent.includes("child"), "the Inspector explains why");
+  });
+
+  it("rejects disconnecting a nesting edge that has no explicit to reference", async () => {
+    const editor = createEditor();
+    await nextTask();
+    let failure;
+    try {
+      editor.disconnect(editor.querySelector("#mic"), editor.querySelector("#filter"));
+    } catch (error) {
+      failure = error;
+    }
+    assert(failure instanceof DOMException, "a nesting edge cannot falsely report disconnection");
+    assertEqual(editor.querySelector("#mic > #filter")?.id, "filter", "nested connection remains intact");
+  });
+
+  it("moves focused node handles with arrow keys and preserves focus", async () => {
+    const editor = createEditor();
+    await nextTask();
+    await waitForLayout();
+    const shadow = editor.shadowRoot;
+    const handle = shadow.querySelector('[data-node-id="mic"] [data-drag-handle]');
+    const x = handle.closest("[data-node-id]").offsetLeft;
+    handle.focus();
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    await nextTask();
+    assertEqual(editor.querySelector("#mic").dataset.graphX, String(x + 16), "arrow movement persists in HTML");
+    assertEqual(shadow.activeElement?.closest("[data-node-id]")?.dataset.nodeId, "mic", "focus stays with moved node");
+    assert(shadow.querySelector("[data-editor-status]").textContent.includes("moved"), "movement is announced");
+  });
+
+  it("connects ports by activating output and then input without dragging", async () => {
+    const editor = createEditor();
+    const music = document.createElement("audio-input-file");
+    music.id = "music";
+    editor.querySelector("audio-context").append(music);
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    const output = shadow.querySelector('[data-node-id="music"] [data-port="output"]');
+    output.click();
+    assertEqual(output.getAttribute("aria-pressed"), "true", "the pending output is exposed to assistive technology");
+    assert(shadow.querySelector("[data-editor-status]").textContent.includes("filter" ) === false, "pending state does not imply completion");
+    shadow.querySelector('[data-node-id="filter"] [data-port="input"]').click();
+    await nextTask();
+    assertEqual(music.getAttribute("to"), "filter", "a second activation connects the source");
+    assert(shadow.querySelector("[data-editor-status]").textContent.includes("connected"), "completion is announced");
+  });
+
+  it("clears an armed output after an invalid port connection", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    const output = shadow.querySelector('[data-node-id="mic"] [data-port="output"]');
+    output.click();
+    shadow.querySelector('[data-node-id="save"] [data-port="input"]').click();
+    assertEqual(output.getAttribute("aria-pressed"), "false", "rejected connection does not leave a pressed port");
+    assert(shadow.querySelector("[data-editor-status]").textContent.includes("must be"), "the rejection explains the incompatible edge");
+    shadow.querySelector('[data-node-id="chunk"] [data-port="output"]').click();
+    shadow.querySelector('[data-node-id="save"] [data-port="input"]').click();
+    await nextTask();
+    assertEqual(editor.querySelector("#save").getAttribute("from"), "chunk", "the next valid connection works");
   });
 
   it("connects action outputs to action inputs through the public API and keyboard controls", async () => {
@@ -539,6 +779,24 @@ describe("graph-editor", () => {
     }
     assert(failure instanceof DOMException, "cycles are rejected by the public editor API");
     assertEqual(editor.querySelector("#save").getAttribute("from"), "chunk", "invalid connection does not mutate HTML");
+  });
+
+  it("selects an existing palette function branch instead of creating an accidental duplicate", async () => {
+    const editor = createEditor();
+    editor.registerFunction("Review", () => {}, { label: "Review result" });
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    shadow.querySelector('[data-node-id="save"] .node-select').click();
+    shadow.querySelector('[data-add-function="Review"]').click();
+    await nextTask();
+    const first = editor.querySelector('graph-action[from="save"][handler="Review(event)"]');
+    assert(first, "the first selection creates a branch");
+    shadow.querySelector('[data-node-id="save"] .node-select').click();
+    shadow.querySelector('[data-add-function="Review"]').click();
+    await nextTask();
+    assertEqual(editor.querySelectorAll('graph-action[from="save"][handler="Review(event)"]').length, 1, "a second palette activation does not duplicate it");
+    assertEqual(shadow.activeElement?.closest("[data-node-id]")?.dataset.nodeId, first.id, "the existing branch is revealed");
+    assert(shadow.querySelector("[data-editor-status]").textContent.includes("already connected"), "the reason is announced");
   });
 
   it("connects output and input ports with a pointer gesture", async () => {

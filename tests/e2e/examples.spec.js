@@ -402,6 +402,24 @@ test("Graph editor sample keeps visual edits and declarative HTML synchronized",
   expect(errors).toEqual([]);
 });
 
+test("Graph editor sample clears stale errors after a valid edit and root recovery", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/graph-editor/`);
+  const editor = page.locator("graph-editor#editor");
+  await editor.locator("[data-connect-from]").selectOption("mic");
+  await editor.locator("[data-connect-to]").selectOption("filter");
+  await editor.getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.locator("#graph-error")).toContainText("NotFoundError");
+  await editor.getByRole("button", { name: "Add Audio file" }).click();
+  await expect(page.locator("#graph-error")).toBeEmpty();
+
+  const audioMarkup = await editor.locator("audio-context#audio").evaluate((element) => element.outerHTML);
+  await editor.locator("audio-context#audio").evaluate((element) => element.remove());
+  await expect(page.locator("#graph-error")).toContainText("recorder");
+  await editor.evaluate((element, html) => element.insertAdjacentHTML("afterbegin", html), audioMarkup);
+  await expect(editor.locator('[data-node-id="recorder"]')).toBeVisible();
+  await expect(page.locator("#graph-error")).toBeEmpty();
+});
+
 test("Graph editor controls stay readable in a dark page and the default layout follows the DAG", async ({
   page,
 }) => {
@@ -561,6 +579,9 @@ test("Custom handler sample runs an editor-scoped function through the graph", a
   await expect(page.getByTestId("handler-source")).toContainText(
     'editor.registerFunction("CustomHandlers.Measure"',
   );
+  await expect(page.getByRole("link", { name: "Open the editable JavaScript module" })).toHaveAttribute(
+    "href", "../assets/graph-handler-example.js",
+  );
   expect(await page.evaluate(() => "CustomHandlers" in globalThis)).toBe(false);
   const editor = page.locator("graph-editor#handler-editor");
   await expect(editor.locator("graph-action#measure-chunk")).toHaveAttribute(
@@ -609,6 +630,71 @@ test("Custom handler sample rewires action data by pointer and keyboard", async 
   expect(errors).toEqual([]);
 });
 
+for (const width of [375, 768]) {
+  test(`Custom handler ports connect by touch drag at ${width}px`, async ({ browser }) => {
+    const context = await browser.newContext({
+      hasTouch: true, isMobile: true, viewport: { width, height: 900 }, deviceScaleFactor: 1,
+    });
+    try {
+      const page = await context.newPage();
+      const errors = watchPageErrors(page);
+      await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+      const editor = page.locator("graph-editor#handler-editor");
+      await editor.locator("[data-connect-from]").selectOption("measure-chunk");
+      await editor.locator("[data-connect-to]").selectOption("audit-chunk");
+      await editor.getByRole("button", { name: "Disconnect" }).click();
+      await expect(editor.locator("graph-action#audit-chunk")).toHaveAttribute("from", "");
+      await editor.evaluate((element) => {
+        for (const [id, x] of [["measure-chunk", 24], ["audit-chunk", 220]]) {
+          const node = element.querySelector(`#${id}`);
+          node.dataset.graphX = String(x);
+          node.dataset.graphY = "24";
+        }
+      });
+      const output = editor.locator('[data-node-id="measure-chunk"] [data-port="output"]');
+      const input = editor.locator('[data-node-id="audit-chunk"] [data-port="input"]');
+      await output.scrollIntoViewIfNeeded();
+      const from = await output.boundingBox();
+      const to = await input.boundingBox();
+      const session = await context.newCDPSession(page);
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart", touchPoints: [{ x: from.x + from.width / 2, y: from.y + from.height / 2 }],
+      });
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove", touchPoints: [{ x: to.x + to.width / 2, y: to.y + to.height / 2 }],
+      });
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect(editor.locator("graph-action#audit-chunk")).toHaveAttribute("from", "measure-chunk");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+test("Mobile vertical swipe across the canvas scrolls the page", async ({ browser }) => {
+  const context = await browser.newContext({
+    hasTouch: true, isMobile: true, viewport: { width: 375, height: 900 }, deviceScaleFactor: 1,
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+    const canvas = page.locator("graph-editor#handler-editor").locator(".canvas");
+    await canvas.scrollIntoViewIfNeeded();
+    const box = await canvas.boundingBox();
+    const before = await page.evaluate(() => scrollY);
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height - 55;
+    const session = await context.newCDPSession(page);
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - 160 }] });
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(before + 20);
+  } finally {
+    await context.close();
+  }
+});
+
 test("Custom handler sample adds a registered function action without typing references", async ({
   page,
 }) => {
@@ -616,33 +702,99 @@ test("Custom handler sample adds a registered function action without typing ref
   await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
   const editor = page.locator("graph-editor#handler-editor");
 
-  await editor.locator('[data-node-id="recorder"] .node-select').click();
-  const addEvent = editor.getByRole("button", { name: "Add dataavailable" });
-  await addEvent.focus();
-  await addEvent.press("Enter");
-  const addedEvent = editor.locator(":scope > graph-event").last();
-  const eventId = await addedEvent.getAttribute("id");
-  await expect(addedEvent).toHaveAttribute("from", "recorder");
-  await expect(addedEvent).toHaveAttribute("type", "dataavailable");
-  await expect(editor.locator(`[data-node-id="${eventId}"] .node-select`)).toBeFocused();
-
-  const addFunction = editor.getByRole("button", { name: "Add Audit recording" });
+  await editor.locator('[data-node-id="measure-chunk"] .node-select').click();
+  const addFunction = editor.getByRole("button", { name: "Add Label summary" });
   await addFunction.focus();
   await addFunction.press("Enter");
   const addedAction = editor.locator(":scope > graph-action").last();
-  await expect(addedAction).toHaveAttribute("from", eventId);
-  await expect(addedAction).toHaveAttribute("handler", "CustomHandlers.Audit(event)");
+  await expect(addedAction).toHaveAttribute("from", "measure-chunk");
+  await expect(addedAction).toHaveAttribute("handler", "CustomHandlers.Label(event)");
   const actionId = await addedAction.getAttribute("id");
   await expect(editor.locator(`[data-node-id="${actionId}"] .node-select`)).toBeFocused();
   await expect(page.getByTestId("serialized-handler-markup")).toContainText(
-    'handler="CustomHandlers.Audit(event)"',
+    'handler="CustomHandlers.Label(event)"',
   );
 
   await page.getByRole("button", { name: "Start handler graph" }).click();
   await page.getByRole("button", { name: "Request handler data" }).click();
-  await expect(page.getByTestId("audit-count")).not.toHaveText("0");
-  await expect(page.getByTestId("handler-results")).toContainText("Audit handler");
+  await expect(page.getByTestId("handler-results")).toContainText("Label handler");
+  await expect(page.getByTestId("handler-results")).toContainText('"label":"Review"');
+  await expect(editor.locator('graph-action[handler="CustomHandlers.Audit(event)"]')).toHaveCount(1);
   expect(errors).toEqual([]);
+});
+
+test("Custom handler sample clears an error after a valid correction", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+  const editor = page.locator("graph-editor#handler-editor");
+  await editor.locator('[data-node-id="audit-chunk"] .node-select').click();
+  const handler = editor.locator('[data-property="handler"]');
+  await handler.fill("alert('unsafe')");
+  await handler.press("Tab");
+  await expect(page.locator("#handler-error")).toContainText("SyntaxError");
+  await handler.fill("CustomHandlers.Audit(event)");
+  await handler.press("Tab");
+  await expect(page.locator("#handler-error")).toBeEmpty();
+  await expect(editor.locator("graph-action#audit-chunk")).toHaveAttribute(
+    "handler", "CustomHandlers.Audit(event)",
+  );
+});
+
+test("Custom handler sample shows the output of an arbitrary registered function", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+  const editor = page.locator("graph-editor#handler-editor");
+  await editor.evaluate((element) => {
+    element.registerFunction("User.DoubleSize", (event) => ({ doubled: event.detail.data.size * 2 }), {
+      label: "Double size",
+    });
+  });
+  await editor.locator('[data-node-id="measure-chunk"] .node-select').click();
+  await editor.getByRole("button", { name: "Add Double size" }).click();
+  await page.getByRole("button", { name: "Start handler graph" }).click();
+  await page.getByRole("button", { name: "Request handler data" }).click();
+  await expect(page.getByTestId("handler-results")).toContainText("DoubleSize handler");
+  await expect(page.getByTestId("handler-results")).toContainText('"doubled":');
+  await expect(page.getByTestId("handler-results")).toContainText("#graph-action-1");
+});
+
+test("Custom handler sample can restart after Close without losing graph edits", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+  const editor = page.locator("graph-editor#handler-editor");
+  await expect(page.getByRole("button", { name: "Close handler graph" })).toBeDisabled();
+  await editor.locator('[data-node-id="measure-chunk"] .node-select').click();
+  await editor.getByRole("button", { name: "Add Label summary" }).click();
+  await page.getByRole("button", { name: "Start handler graph" }).click();
+  await page.getByRole("button", { name: "Close handler graph" }).click();
+  const restart = page.getByRole("button", { name: "Restart handler graph" });
+  await expect(restart).toBeVisible();
+  await restart.click();
+  await expect(page.getByRole("button", { name: "Start handler graph" })).toBeEnabled();
+  await expect(editor.locator('graph-action[handler="CustomHandlers.Label(event)"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Start handler graph" }).click();
+  await page.getByRole("button", { name: "Request handler data" }).click();
+  await expect(page.getByTestId("handler-results")).toContainText("Label handler");
+});
+
+test("Large graph offers a bounded overview without hiding the drawing area", async ({ page }) => {
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+  const editor = page.locator("graph-editor#handler-editor");
+  await editor.evaluate((element) => {
+    for (let index = 0; index < 20; index += 1) {
+      const action = document.createElement("graph-action");
+      action.id = `branch-${index}`;
+      action.setAttribute("from", "measure-chunk");
+      action.setAttribute("handler", "CustomHandlers.Audit(event)");
+      element.append(action);
+    }
+  });
+  const overview = editor.locator('[data-navigator-view="overview"]');
+  await expect(overview).toBeVisible();
+  await overview.click();
+  await expect(overview).toHaveAttribute("aria-pressed", "true");
+  await expect(editor.locator(".overview-map")).toBeVisible();
+  await expect(editor.locator(".overview-map [data-overview-edge]")).toHaveCount(25);
+  expect(await editor.locator(".canvas").evaluate((element) => element.clientHeight)).toBeGreaterThan(240);
+  await editor.locator('[data-navigator-view="nodes"]').click();
+  await expect(editor.locator('[data-navigate-node="branch-19"]')).toBeVisible();
 });
 
 for (const width of [375, 768, 1024, 1440]) {
@@ -659,7 +811,7 @@ for (const width of [375, 768, 1024, 1440]) {
     const addTray = editor.locator('[data-toggle-panel="palette"]');
     if (await addTray.isVisible()) await addTray.click();
     await expect(editor.locator("[data-palette-search]")).toBeVisible();
-    await expect(editor.locator("[data-add-function]")).toHaveCount(2);
+    await expect(editor.locator("[data-add-function]")).toHaveCount(3);
     expect(
       await editor.evaluate((element) => [...element.shadowRoot.querySelectorAll("button")]
         .filter((button) => button.getClientRects().length > 0)
@@ -687,6 +839,7 @@ for (const width of [375, 768, 1024, 1440]) {
           return instruction.left < number.right;
         }),
       undersized: [...document.querySelectorAll("button")]
+        .filter((button) => button.getClientRects().length > 0)
         .filter((button) => button.getBoundingClientRect().height < 44)
         .map((button) => button.textContent.trim()),
     }));
