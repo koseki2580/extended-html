@@ -365,6 +365,12 @@ const unregister = editor.registerFunction("Audit", (event) =&gt; {
             先にどのノードを選ぶ必要があるか表示されます。
           </p>
           <p>
+            Actionを選んで次の関数を追加すると、関数を連結できます。各Actionには暗黙の入力と出力が
+            1つずつあり、戻り値が次の関数の<code>event.detail.data</code>になります。
+            Promiseは解決後に渡され、<code>undefined</code>を返すとその経路の出力は止まります。
+            表示されたportをドラッグするかFrom/To操作で接続できます。input/output用の追加タグは不要です。
+          </p>
+          <p>
             関数の登録はそのeditorだけに適用され、不要になったら<code>unregister()</code>で解除できます。
             出力したHTMLに保存されるのは<code>handler="Audit(event)"</code>という参照だけなので、
             HTMLを読み込む際には関数を再登録してください。従来のglobal関数の参照も使えますが、

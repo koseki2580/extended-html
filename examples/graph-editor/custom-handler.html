@@ -20,7 +20,8 @@
           <h1>Connect<br />application logic.</h1>
           <p class="hero-copy">
             Write normal JavaScript, register it with one editor, and connect
-            browser data to it visually—without globals or evaluated code.
+            browser data to it visually. A returned value flows into the next
+            function without extra input or output elements.
           </p>
         </header>
 
@@ -34,18 +35,25 @@
                 adds a labelled Function card to this editor only.
               </p>
             </div>
-            <pre class="code-sample"><code data-testid="handler-source">const measure = (event) => {
-  console.log(event.detail.data.size);
-  console.log(event.detail.metadata.sourceEvent);
+            <pre class="code-sample"><code data-testid="handler-source">const measure = (event) => ({
+  size: event.detail.data.size,
+  type: event.detail.data.type,
+});
+const audit = (event) => {
+  console.log(event.detail.data.size); // measure's output
 };
 
 editor.registerFunction("CustomHandlers.Measure", measure, {
   label: "Measure recording",
-  description: "Reports the recorded Blob size",
+  description: "Returns the recorded Blob summary",
 });
+editor.registerFunction("CustomHandlers.Audit", audit);
 
 // HTML stores the stable reference, never the function body:
-handler="CustomHandlers.Measure(event)"</code></pre>
+&lt;graph-action id="measure-chunk" from="chunk-ready"
+  handler="CustomHandlers.Measure(event)"&gt;&lt;/graph-action&gt;
+&lt;graph-action from="measure-chunk"
+  handler="CustomHandlers.Audit(event)"&gt;&lt;/graph-action&gt;</code></pre>
           </section>
 
           <section class="panel graph-example-panel" aria-labelledby="handler-editor-heading">
@@ -54,14 +62,14 @@ handler="CustomHandlers.Measure(event)"</code></pre>
                 <p class="eyebrow">Step 2 · Declarative connection</p>
                 <h2 id="handler-editor-heading">Wire it in the editor</h2>
                 <p class="field-help">
-                  The initial Measure action is runnable. Add an Audit path
-                  without typing an event name or handler expression.
+                  Measure returns a summary to Audit. Select Measure and add
+                  another function to branch its output without typing code in HTML.
                 </p>
               </div>
               <ol class="handler-steps" aria-label="Add another registered function">
-                <li><span>1</span><div>Select <strong>Media recorder</strong></div></li>
-                <li><span>2</span><div>Choose the <code>dataavailable</code> Event</div></li>
-                <li><span>3</span><div>Choose <strong>Audit recording</strong></div></li>
+                <li><span>1</span><div>Select <strong>Measure recording</strong></div></li>
+                <li><span>2</span><div>Choose <strong>Audit recording</strong></div></li>
+                <li><span>3</span><div>Inspect its input and output connections</div></li>
               </ol>
             </div>
             <p class="graph-scroll-hint">
@@ -84,6 +92,11 @@ handler="CustomHandlers.Measure(event)"</code></pre>
                 id="measure-chunk"
                 from="chunk-ready"
                 handler="CustomHandlers.Measure(event)"
+              ></graph-action>
+              <graph-action
+                id="audit-chunk"
+                from="measure-chunk"
+                handler="CustomHandlers.Audit(event)"
               ></graph-action>
             </graph-editor>
           </section>
@@ -112,7 +125,8 @@ handler="CustomHandlers.Measure(event)"</code></pre>
           <section class="panel" aria-labelledby="handler-results-heading">
             <h2 id="handler-results-heading">Application results</h2>
             <p class="field-help">
-              Each entry identifies the application function and the original browser event.
+              Measure receives a Blob; Audit receives its returned summary.
+              Entries retain the original browser event and identify the producing action.
             </p>
             <ol class="event-log handler-results" data-testid="handler-results" aria-live="polite"></ol>
           </section>

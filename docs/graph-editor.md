@@ -163,7 +163,7 @@ Runtime and editing errors also appear below the editor, even when the trays are
 attribute references a unique ID inside the editor and `type` names the source
 event.
 
-`<graph-action>` listens to one `<graph-event>` through `from`. `handler`
+`<graph-action>` listens to one `<graph-event>` or `<graph-action>` through `from`. `handler`
 accepts only a function reference in the form `Handler(event)` or a dotted
 path such as `Actions.Save(event)`. Resolution checks the containing editor's
 registry before the legacy global scope. It never evaluates arbitrary
@@ -184,16 +184,18 @@ JavaScript.
     from="recorder"
     type="dataavailable"
   ></graph-event>
-  <graph-action
+  <graph-action id="measure-chunk"
     from="chunk-ready"
-    handler="SaveChunk(event)"
+    handler="MeasureChunk(event)"
   ></graph-action>
+  <graph-action from="measure-chunk" handler="SaveChunk(event)"></graph-action>
 </graph-editor>
 
 <script>
+  globalThis.MeasureChunk = (event) => event.detail.data.size;
   globalThis.SaveChunk = (event) => {
-    console.log(event.detail.data);
-    console.log(event.detail.metadata.sourceEvent);
+    console.log(event.detail.data); // The returned size.
+    console.log(event.detail.metadata.sourceEvent); // dataavailable.
   };
 </script>
 ```
@@ -201,11 +203,26 @@ JavaScript.
 If the source event already uses `event.detail.data` and
 `event.detail.metadata`, both are preserved. A native `MessageEvent` contributes
 its `data`; another raw event is passed as data itself. The bridge adds
-`sourceId`, `sourceEvent`, and `eventId` metadata. The action first dispatches a
-`run` event with the same detail and then calls the configured handler.
+`sourceId`, `sourceEvent`, and `eventId` metadata. Each action first dispatches
+`run` with the received detail and then calls its handler. A non-`undefined`
+return value becomes that action's `data` event and the next action's
+`event.detail.data`; a Promise is awaited before publishing. The data event
+retains incoming metadata and adds `producerId` for the immediate action.
+Returning `undefined` produces no output, whereas `null` is valid output.
 Synchronous throws and rejected promises report the original error through the
-editor. Rejections from actions that were removed or rewired are ignored; return
-values are not routed to another node.
+editor and do not publish output. Results or rejections from actions removed or
+rewired before settlement are ignored. Each action has one implicit input and
+one implicit output that may fan out; multiple named ports and merge inputs are
+not supported.
+
+An action's `from` may be empty while disconnected. Cyclic event/action references
+are rejected with `error`, leaving its last working listener intact. The editor
+supports connecting event/action outputs to action inputs by pointer ports,
+keyboard controls, or `connect(source, action)`; `disconnect(source, action)`
+clears that input while preserving the action's canvas position. The same HTML
+`from` attribute persists these connections.
+Audio connections continue through their adapter and are not interchangeable
+with event/action data edges.
 
 Invalid attribute rewiring reports `error` and keeps the last working listener.
 Removing either orchestration element detaches its listeners.
@@ -256,7 +273,8 @@ globalThis.CustomHandlers = {
 The handler value is a reference, not a JavaScript body. The editor never uses
 `eval` or `new Function`; arbitrary implementation code remains reviewable in
 the imported module. The runnable [custom handler example](https://koseki2580.github.io/extended-html/examples/graph-editor/custom-handler.html)
-also demonstrates adding a second action through the visual editor.
+shows a Blob converted to a summary and passed into a second action. It also
+demonstrates adding another action through the visual editor.
 
 ## Adapter contract
 

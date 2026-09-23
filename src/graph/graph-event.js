@@ -1,4 +1,4 @@
-import { findUniqueGraphElement, reportGraphError } from "./graph-handler.js";
+import { assertGraphAcyclic, findUniqueGraphElement, reportGraphError } from "./graph-handler.js";
 
 const eventPayload = (event) => {
   if (event.detail && Object.hasOwn(event.detail, "data")) {
@@ -68,6 +68,7 @@ export class GraphEventElement extends HTMLElement {
       if (source === this) {
         throw new DOMException("<graph-event> cannot listen to itself", "SyntaxError");
       }
+      assertGraphAcyclic(this.#editor, this, source);
       const type = this.getAttribute("type")?.trim();
       if (!type) {
         throw new DOMException("<graph-event> requires a non-empty type", "SyntaxError");

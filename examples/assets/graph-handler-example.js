@@ -58,8 +58,8 @@ const appendResult = (handler, event) => {
   detail.textContent = JSON.stringify({
     data: {
       kind: data instanceof Blob ? "Blob" : typeof data,
-      size: data instanceof Blob ? data.size : null,
-      type: data instanceof Blob ? data.type : null,
+      size: data instanceof Blob ? data.size : data?.size ?? null,
+      type: data instanceof Blob ? data.type : data?.type ?? null,
     },
     metadata: event.detail.metadata,
   });
@@ -73,6 +73,8 @@ const CustomHandlers = Object.freeze({
     measured += 1;
     measureCount.textContent = String(measured);
     appendResult("Measure", event);
+    // A returned value becomes this action's data output for connected actions.
+    return { size: event.detail.data.size, type: event.detail.data.type };
   },
   Audit(event) {
     audited += 1;
@@ -83,7 +85,7 @@ const CustomHandlers = Object.freeze({
 
 editor.registerFunction("CustomHandlers.Measure", CustomHandlers.Measure, {
   label: "Measure recording",
-  description: "Reports the recorded Blob size",
+  description: "Returns the recorded Blob summary",
 });
 editor.registerFunction("CustomHandlers.Audit", CustomHandlers.Audit, {
   label: "Audit recording",

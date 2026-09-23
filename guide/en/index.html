@@ -382,6 +382,14 @@ const unregister = editor.registerFunction("Audit", (event) =&gt; {
             which node to select first.
           </p>
           <p>
+            Select an Action and add another function to chain them. Each Action
+            has one implicit input and output: returning a value passes it to the
+            next handler as <code>event.detail.data</code>. Promise results are
+            passed after resolution; returning <code>undefined</code> stops that
+            path. Connect the visible ports by dragging or with From/To controls.
+            No extra input/output tags are needed.
+          </p>
+          <p>
             Registration belongs to this editor only. Call <code>unregister()</code>
             when the function is no longer needed. Exported HTML stores only
             <code>handler="Audit(event)"</code>, so register the function again

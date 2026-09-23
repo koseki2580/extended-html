@@ -492,6 +492,55 @@ describe("graph-editor", () => {
     assertEqual(music.hasAttribute("to"), false, "keyboard form disconnects nodes");
   });
 
+  it("connects action outputs to action inputs through the public API and keyboard controls", async () => {
+    const editor = createEditor();
+    const next = document.createElement("graph-action");
+    next.id = "next";
+    next.setAttribute("handler", "Next(event)");
+    editor.append(next);
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    assert(shadow.querySelector('[data-node-id="save"] [data-port="output"]'), "actions expose an output port");
+    editor.connect(editor.querySelector("#save"), next);
+    await nextTask();
+    assertEqual(next.getAttribute("from"), "save", "API stores the action reference in HTML");
+    assert(shadow.querySelector('[data-edge-from="save"][data-edge-to="next"]'), "the chain edge is visible");
+
+    shadow.querySelector('[data-connect-from]').value = "chunk";
+    shadow.querySelector('[data-connect-to]').value = "next";
+    shadow.querySelector('[data-action="connect"]').click();
+    await nextTask();
+    assertEqual(next.getAttribute("from"), "chunk", "keyboard controls can rewire an action from an event");
+    const beforeDisconnect = shadow.querySelector('[data-node-id="next"]');
+    const previousPosition = { x: beforeDisconnect.offsetLeft, y: beforeDisconnect.offsetTop };
+    shadow.querySelector('[data-action="disconnect"]').click();
+    await nextTask();
+    assertEqual(next.getAttribute("from"), "", "keyboard controls can disconnect an action");
+    assertEqual(next.dataset.graphX, String(previousPosition.x), "disconnect retains the node's horizontal position");
+    assertEqual(next.dataset.graphY, String(previousPosition.y), "disconnect retains the node's vertical position");
+  });
+
+  it("adds a registered function after a selected action and rejects cyclic connections", async () => {
+    const editor = createEditor();
+    editor.registerFunction("Double", (event) => event.detail.data * 2);
+    await nextTask();
+    editor.shadowRoot.querySelector('[data-node-id="save"] .node-select').click();
+    const add = editor.shadowRoot.querySelector('[data-add-function="Double"]');
+    assertEqual(add.getAttribute("aria-disabled"), "false", "selected actions enable the function palette");
+    add.click();
+    await nextTask();
+    const added = editor.querySelector("#graph-action-1");
+    assertEqual(added.getAttribute("from"), "save", "the new action follows the selected action");
+    let failure;
+    try {
+      editor.connect(added, editor.querySelector("#save"));
+    } catch (error) {
+      failure = error;
+    }
+    assert(failure instanceof DOMException, "cycles are rejected by the public editor API");
+    assertEqual(editor.querySelector("#save").getAttribute("from"), "chunk", "invalid connection does not mutate HTML");
+  });
+
   it("connects output and input ports with a pointer gesture", async () => {
     const editor = createEditor();
     const music = document.createElement("audio-input-file");

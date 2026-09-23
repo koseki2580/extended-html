@@ -567,14 +567,45 @@ test("Custom handler sample runs an editor-scoped function through the graph", a
     "handler",
     "CustomHandlers.Measure(event)",
   );
+  await expect(editor.locator("graph-action#audit-chunk")).toHaveAttribute("from", "measure-chunk");
+  await expect(editor.locator('[data-node-id="measure-chunk"] [data-port="output"]')).toBeVisible();
+  await expect(editor.locator('path[data-edge-from="measure-chunk"][data-edge-to="audit-chunk"]')).toHaveCount(1);
+  await editor.locator('[data-node-id="measure-chunk"] .node-select').click();
+  await expect(editor.locator('[data-selection-status]')).toContainText("1 input, 1 output");
+  await expect(editor.locator('[data-related-id="audit-chunk"]')).toBeVisible();
   await expect(page.getByTestId("serialized-handler-markup")).not.toContainText('src="blob:');
 
   await page.getByRole("button", { name: "Start handler graph" }).click();
   await expect(page.getByTestId("handler-audio-state")).toHaveText("Running");
   await page.getByRole("button", { name: "Request handler data" }).click();
   await expect(page.getByTestId("measure-count")).not.toHaveText("0");
+  await expect(page.getByTestId("audit-count")).not.toHaveText("0");
   await expect(page.getByTestId("handler-results")).toContainText("Blob");
+  await expect(page.getByTestId("handler-results")).toContainText('"producerId":"measure-chunk"');
   await expect(page.getByTestId("handler-results")).toContainText("dataavailable");
+  expect(errors).toEqual([]);
+});
+
+test("Custom handler sample rewires action data by pointer and keyboard", async ({ page }) => {
+  const errors = watchPageErrors(page);
+  await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
+  const editor = page.locator("graph-editor#handler-editor");
+  await editor.locator("[data-connect-from]").selectOption("measure-chunk");
+  await editor.locator("[data-connect-to]").selectOption("audit-chunk");
+  await editor.getByRole("button", { name: "Disconnect" }).click();
+  await expect(editor.locator("graph-action#audit-chunk")).toHaveAttribute("from", "");
+
+  const output = editor.locator('[data-node-id="measure-chunk"] [data-port="output"]');
+  const input = editor.locator('[data-node-id="audit-chunk"] [data-port="input"]');
+  await output.scrollIntoViewIfNeeded();
+  await input.scrollIntoViewIfNeeded();
+  const from = await output.boundingBox();
+  const to = await input.boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2);
+  await page.mouse.up();
+  await expect(editor.locator("graph-action#audit-chunk")).toHaveAttribute("from", "measure-chunk");
   expect(errors).toEqual([]);
 });
 

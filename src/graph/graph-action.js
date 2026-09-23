@@ -1,5 +1,5 @@
 import {
-  findUniqueGraphElement,
+  findGraphActionSource,
   parseGraphHandler,
   reportGraphError,
   resolveGraphHandler,
@@ -56,17 +56,13 @@ export class GraphActionElement extends HTMLElement {
 
   #rewire() {
     try {
-      const source = findUniqueGraphElement(
-        this.#editor,
-        this.getAttribute("from") ?? "",
-        "graph-event",
-      );
+      const source = findGraphActionSource(this.#editor, this, this.getAttribute("from"));
       const handlerPath = parseGraphHandler(this.getAttribute("handler"));
       const handlerChanged = handlerPath.join(".") !== this.#handlerPath?.join(".");
       if (source !== this.#source) {
         this.#detach();
         this.#source = source;
-        source.addEventListener("data", this.#handleData);
+        source?.addEventListener("data", this.#handleData);
       }
       this.#handlerPath = handlerPath;
       if (handlerChanged) this.#revision += 1;
@@ -87,10 +83,22 @@ export class GraphActionElement extends HTMLElement {
     const revision = this.#revision;
     try {
       const result = resolveGraphHandler(this.#handlerPath, this.#editor).call(this, runEvent);
-      // Observe promises without delaying other listeners or leaking unhandled rejections.
-      Promise.resolve(result).catch((error) => {
-        if (this.isConnected && revision === this.#revision) reportGraphError(this, error);
-      });
+      const publish = (data) => {
+        if (!this.isConnected || revision !== this.#revision || data === undefined) return;
+        this.dispatchEvent(new CustomEvent("data", {
+          detail: {
+            data,
+            metadata: { ...event.detail?.metadata, producerId: this.id || null },
+          },
+        }));
+      };
+      if (result && typeof result.then === "function") {
+        Promise.resolve(result).then(publish, (error) => {
+          if (this.isConnected && revision === this.#revision) reportGraphError(this, error);
+        });
+      } else {
+        publish(result);
+      }
     } catch (error) {
       reportGraphError(this, error);
     }

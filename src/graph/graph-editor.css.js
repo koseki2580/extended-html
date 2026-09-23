@@ -394,6 +394,13 @@ export const graphEditorStyles = `
     font: .68rem "JetBrains Mono", ui-monospace, monospace;
     margin-top: .15rem;
   }
+  .port-labels {
+    color: var(--graph-muted);
+    display: flex;
+    font-size: .62rem;
+    font-weight: 700;
+    justify-content: space-between;
+  }
   .ports { display: flex; justify-content: space-between; min-height: 2.75rem; }
   .port {
     align-items: center;

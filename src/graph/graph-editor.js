@@ -1,7 +1,7 @@
 import { findGraphAdapter } from "./graph-adapters.js";
 import { graphEditorStyles } from "./graph-editor.css.js";
 import { listGraphFunctions, registerGraphFunction } from "./graph-functions.js";
-import { findUniqueGraphElement, parseGraphHandler } from "./graph-handler.js";
+import { assertGraphAcyclic, findGraphActionSource, findUniqueGraphElement, parseGraphHandler } from "./graph-handler.js";
 
 const escapeHtml = (value) =>
   String(value)
@@ -96,7 +96,7 @@ const orchestrationDescriptor = (element, kind, properties, label = null) => ({
   kind,
   label: label ?? (kind === "event" ? "Event" : "Action"),
   properties: properties.map((name) => ({ name, value: element.getAttribute(name) })),
-  events: kind === "event" ? ["data"] : ["run"],
+  events: kind === "event" ? ["data"] : ["run", "data"],
   position: {
     x: Number.isFinite(Number(element.dataset.graphX)) ? Number(element.dataset.graphX) : null,
     y: Number.isFinite(Number(element.dataset.graphY)) ? Number(element.dataset.graphY) : null,
@@ -188,16 +188,43 @@ export class GraphEditorElement extends HTMLElement {
 
   connect(from, to) {
     return this.#mutate("edgeconnect", "connect", () => {
-      this.#adapter.connect(this.#root, from, to);
+      if (to?.localName === "graph-action") {
+        this.#connectAction(from, to);
+      } else {
+        this.#adapter.connect(this.#root, from, to);
+      }
       return { from, to };
     });
   }
 
   disconnect(from, to) {
     return this.#mutate("edgedisconnect", "disconnect", () => {
-      this.#adapter.disconnect(this.#root, from, to);
+      if (to?.localName === "graph-action") {
+        if (to.parentElement !== this || to.getAttribute("from") !== from?.id) {
+          throw new DOMException("Graph action is not connected to this source", "NotFoundError");
+        }
+        this.#preserveNodePosition(to);
+        to.setAttribute("from", "");
+      } else {
+        this.#adapter.disconnect(this.#root, from, to);
+      }
       return { from, to };
     });
+  }
+
+  #connectAction(from, to) {
+    if (to.parentElement !== this || from?.parentElement !== this || !from.id) {
+      throw new DOMException("Graph action endpoints must belong to this editor", "NotFoundError");
+    }
+    findGraphActionSource(this, to, from.id);
+    to.setAttribute("from", from.id);
+  }
+
+  #preserveNodePosition(element) {
+    const card = this.shadowRoot.querySelector(`[data-node-id="${CSS.escape(element.id)}"]`);
+    if (!card) return;
+    element.dataset.graphX = String(card.offsetLeft);
+    element.dataset.graphY = String(card.offsetTop);
   }
 
   setProperty(element, name, value) {
@@ -223,15 +250,16 @@ export class GraphEditorElement extends HTMLElement {
     });
   }
 
-  addAction(eventElement, handler = "HandleGraphEvent(event)") {
+  addAction(sourceElement, handler = "HandleGraphEvent(event)") {
     return this.#mutate("nodeadd", "add-action", () => {
-      if (eventElement?.localName !== "graph-event" || !eventElement.id) {
-        throw new TypeError("An action requires an identified <graph-event>");
+      if (!["graph-event", "graph-action"].includes(sourceElement?.localName) ||
+          !sourceElement.id || sourceElement.parentElement !== this) {
+        throw new TypeError("An action requires an identified <graph-event> or <graph-action> in this editor");
       }
       parseGraphHandler(handler);
       const element = document.createElement("graph-action");
       element.id = this.#nextId("graph-action");
-      element.setAttribute("from", eventElement.id);
+      element.setAttribute("from", sourceElement.id);
       element.setAttribute("handler", handler);
       this.append(element);
       return element;
@@ -258,14 +286,14 @@ export class GraphEditorElement extends HTMLElement {
     const nodes = [...model.nodes];
     const edges = [...model.edges];
     const byId = new Map(nodes.map((node) => [node.id, node]));
+    const orchestrationNodes = [];
 
     for (const element of this.querySelectorAll(":scope > graph-event")) {
       if (!element.id) element.id = this.#nextId("graph-event");
       const node = orchestrationDescriptor(element, "event", ["from", "type"]);
       nodes.push(node);
+      orchestrationNodes.push(node);
       byId.set(node.id, node);
-      const source = byId.get(element.getAttribute("from"));
-      if (source) edges.push({ from: source, to: node, kind: "event" });
     }
     for (const element of this.querySelectorAll(":scope > graph-action")) {
       if (!element.id) element.id = this.#nextId("graph-action");
@@ -283,9 +311,14 @@ export class GraphEditorElement extends HTMLElement {
       }
       const node = orchestrationDescriptor(element, "action", ["from", "handler"], label);
       nodes.push(node);
+      orchestrationNodes.push(node);
       byId.set(node.id, node);
-      const source = byId.get(element.getAttribute("from"));
-      if (source) edges.push({ from: source, to: node, kind: "action" });
+    }
+    for (const node of orchestrationNodes) {
+      const source = byId.get(node.element.getAttribute("from"));
+      if (source && (node.kind === "event" || ["event", "action"].includes(source.kind))) {
+        edges.push({ from: source, to: node, kind: node.kind });
+      }
     }
     return { ...model, nodes, edges };
   }
@@ -403,8 +436,8 @@ export class GraphEditorElement extends HTMLElement {
     }));
     const registeredFunctions = listGraphFunctions(this);
     const functionItems = registeredFunctions.map((descriptor) => {
-      const allowed = selected?.kind === "event";
-      const reason = allowed ? "" : "Select an event before adding a function";
+      const allowed = ["event", "action"].includes(selected?.kind);
+      const reason = allowed ? "" : "Select an event or action before adding a function";
       return {
         group: "functions",
         kind: "action",
@@ -419,8 +452,8 @@ export class GraphEditorElement extends HTMLElement {
     const legacyAction = {
       group: "functions", kind: "action", label: "Action",
       detail: "Advanced: enter a registered or global function reference",
-      allowed: selected?.kind === "event",
-      reason: "Select an event before adding an action",
+      allowed: ["event", "action"].includes(selected?.kind),
+      reason: "Select an event or action before adding an action",
       attribute: 'data-action="add-action"',
       search: ["action", "legacy", "handler", "function"],
     };
@@ -488,20 +521,17 @@ export class GraphEditorElement extends HTMLElement {
   }
 
   #toolbarMarkup() {
-    const nodes = this.#model.nodes.filter(
-      (node) => !["event", "action", "consumer"].includes(node.kind),
-    );
-    const options = (selectedId) => nodes
+    const options = (selectedId, kinds) => this.#model.nodes.filter((node) => kinds.includes(node.kind))
       .map((node) => `<option value="${escapeHtml(node.id)}" ${node.id === selectedId ? "selected" : ""}>${escapeHtml(node.id || node.label)}</option>`)
       .join("");
     return `
       <div class="toolbar" aria-label="Keyboard edge controls">
         <div class="toolbar-heading"><strong>Connect nodes</strong><small>Keyboard alternative to dragging ports</small></div>
         <label for="graph-connect-from">From</label>
-        <select id="graph-connect-from" data-connect-from><option value="">Choose source</option>${options(this.#connectFromId)}</select>
+        <select id="graph-connect-from" data-connect-from><option value="">Choose source</option>${options(this.#connectFromId, ["source", "processor", "event", "action"])}</select>
         <span class="toolbar-arrow" aria-hidden="true">→</span>
         <label for="graph-connect-to">To</label>
-        <select id="graph-connect-to" data-connect-to><option value="">Choose target</option>${options(this.#connectToId)}</select>
+        <select id="graph-connect-to" data-connect-to><option value="">Choose target</option>${options(this.#connectToId, ["processor", "output", "consumer", "action"])}</select>
         <div class="toolbar-actions">
           <button type="button" data-action="connect">Connect</button>
           <button type="button" data-action="disconnect">Disconnect</button>
@@ -562,9 +592,10 @@ export class GraphEditorElement extends HTMLElement {
           <strong>${escapeHtml(node.label)}</strong><small>#${escapeHtml(node.id || node.nodeName)}</small>
         </button>
         ${relationLabel ? `<span class="relation-badge">${relationLabel}</span>` : ""}
+        ${node.kind === "action" ? '<span class="port-labels"><span>Input</span><span>Output</span></span>' : ""}
         <span class="ports">
           ${["source", "event"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="input" aria-label="Connect into ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m13 8-4 4 4 4"/></svg></button>`}
-          ${["output", "consumer", "action"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="output" aria-label="Connect from ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m11 8 4 4-4 4"/></svg></button>`}
+          ${["output", "consumer"].includes(node.kind) ? "<span></span>" : `<button class="port" type="button" data-port="output" aria-label="Connect from ${escapeHtml(node.id)}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m11 8 4 4-4 4"/></svg></button>`}
         </span>
       </div>
     `;
@@ -895,11 +926,12 @@ export class GraphEditorElement extends HTMLElement {
       if (element.localName === "graph-event") {
         const source = findUniqueGraphElement(this, element.getAttribute("from"));
         if (source === element) throw new DOMException("<graph-event> cannot listen to itself", "SyntaxError");
+        assertGraphAcyclic(this, element, source);
         if (!element.getAttribute("type")?.trim()) {
           throw new DOMException("<graph-event> requires a non-empty type", "SyntaxError");
         }
       } else {
-        findUniqueGraphElement(this, element.getAttribute("from"), "graph-event");
+        findGraphActionSource(this, element, element.getAttribute("from"));
         parseGraphHandler(element.getAttribute("handler"));
       }
     } catch (error) {

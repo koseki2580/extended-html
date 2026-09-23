@@ -54,3 +54,25 @@ export const findUniqueGraphElement = (editor, id, expectedName = null) => {
   }
   return matches[0];
 };
+
+export const assertGraphAcyclic = (editor, node, source) => {
+  // Both orchestration tags can relay data; follow their references to the origin.
+  const seen = new Set([node]);
+  let cursor = source;
+  while (["graph-action", "graph-event"].includes(cursor?.localName)) {
+    if (seen.has(cursor)) throw new DOMException("Graph connection creates a cycle", "SyntaxError");
+    seen.add(cursor);
+    const from = cursor.getAttribute("from");
+    cursor = from?.trim() ? findUniqueGraphElement(editor, from) : null;
+  }
+};
+
+export const findGraphActionSource = (editor, action, id) => {
+  if (!id?.trim()) return null;
+  const source = findUniqueGraphElement(editor, id);
+  if (!["graph-event", "graph-action"].includes(source.localName)) {
+    throw new DOMException(`Graph element "${id}" must be <graph-event> or <graph-action>`, "SyntaxError");
+  }
+  assertGraphAcyclic(editor, action, source);
+  return source;
+};
