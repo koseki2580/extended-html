@@ -1,5 +1,6 @@
 import "../../src/audio/index.js";
 import "../../src/graph/index.js";
+import { registerGraphAdapter } from "../../src/graph/graph-adapters.js";
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -40,6 +41,30 @@ afterEach(() => {
 });
 
 describe("graph-editor", () => {
+  it("leaves creation validation to adapters without a capability query", async () => {
+    registerGraphAdapter("custom-test-graph", {
+      nodeTypes: [{ localName: "custom-step", kind: "processor", label: "Custom step" }],
+      read: (root) => ({ root, nodes: [...root.children].map((element) => ({
+        element, id: element.id, nodeName: element.localName, kind: "processor",
+        label: "Custom step", properties: [], events: [], position: {},
+      })), edges: [] }),
+      addNode(root, name) {
+        const node = document.createElement(name);
+        node.id = "custom-step-1";
+        root.append(node);
+        return node;
+      },
+      removeNode() {}, connect() {}, disconnect() {}, setProperty() {}, setPosition() {},
+    });
+    const editor = document.createElement("graph-editor");
+    editor.innerHTML = "<custom-test-graph></custom-test-graph>";
+    document.body.append(editor);
+    await nextTask();
+    const button = editor.shadowRoot.querySelector('[data-add-node="custom-step"]');
+    button.click();
+    await nextTask();
+    assert(editor.querySelector("custom-test-graph > custom-step"), "a custom adapter can create a root processor");
+  });
   it("renders an accessible palette, graph nodes, edges, and inspector", async () => {
     const editor = createEditor();
     await nextTask();
@@ -56,6 +81,21 @@ describe("graph-editor", () => {
       "all edge types are drawn",
     );
     assert(shadow.querySelector('[aria-label="Graph node inspector"]'), "inspector is labelled");
+    assert(
+      shadow.querySelector('[data-palette-group="functions"] .palette-empty')?.textContent.includes("registerFunction"),
+      "the empty Functions group explains how application functions become available",
+    );
+    const addToggle = shadow.querySelector('[data-toggle-panel="palette"]');
+    const inspectorToggle = shadow.querySelector('[data-toggle-panel="inspector"]');
+    assert(addToggle && inspectorToggle, "mobile users can collapse secondary panels");
+    assertEqual(addToggle.getAttribute("aria-expanded"), "false", "the add tray starts compact");
+    assertEqual(
+      inspectorToggle.getAttribute("aria-expanded"),
+      "false",
+      "the selection drawer starts compact",
+    );
+    addToggle.click();
+    assertEqual(addToggle.getAttribute("aria-expanded"), "true", "the add tray can expand");
   });
 
   it("assigns persistent ids when source markup omits graph node ids", async () => {
@@ -94,6 +134,166 @@ describe("graph-editor", () => {
     assertEqual(mutation.data, added, "mutation data exposes the added element");
     assertEqual(mutation.metadata.operation, "add", "operation metadata is included");
     assert(editor.serialize().includes("<audio-input-file"), "serialized HTML reflects DOM");
+  });
+
+  it("registers reviewed functions without serializing their implementation", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const calls = [];
+    const errors = [];
+    editor.addEventListener("error", (event) => errors.push(event.detail.data));
+
+    const unregister = editor.registerFunction("SaveChunk", (event) => {
+      calls.push(event.detail.data);
+    }, { label: "Save recording" });
+    editor.querySelector("#chunk").dispatchEvent(new CustomEvent("data", {
+      detail: { data: "first", metadata: {} },
+    }));
+
+    assertEqual(calls.join(","), "first", "the action uses the editor registration");
+    assert(!editor.serialize().includes("Save recording"), "runtime metadata is not serialized");
+    assert(!editor.serialize().includes("calls.push"), "the function body is not serialized");
+
+    unregister();
+    unregister();
+    editor.querySelector("#chunk").dispatchEvent(new CustomEvent("data", {
+      detail: { data: "second", metadata: {} },
+    }));
+    assertEqual(calls.join(","), "first", "cleanup stops scoped execution");
+    assert(errors.at(-1) instanceof ReferenceError, "missing cleanup target reports an error");
+  });
+
+  it("adds explicit events and registered functions from a searchable contextual palette", async () => {
+    const editor = createEditor();
+    editor.registerFunction("CustomHandlers.Audit", () => {}, {
+      label: "Audit recording",
+      description: "Records delivery metadata",
+    });
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    const search = shadow.querySelector('[type="search"][data-palette-search]');
+    assert(search, "the add panel has a native search field");
+
+    const filterButton = shadow.querySelector('[data-add-node="audio-biquad-filter"]');
+    assertEqual(filterButton.getAttribute("aria-disabled"), "true", "invalid children are disabled");
+    filterButton.click();
+    assert(
+      shadow.querySelector("[data-palette-status]").textContent.includes("Select"),
+      "an unavailable operation explains its prerequisite",
+    );
+
+    search.value = "audit";
+    search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    assertEqual(
+      shadow.querySelector('[data-add-function="CustomHandlers.Audit"]').hidden,
+      false,
+      "function metadata participates in search",
+    );
+    assertEqual(
+      shadow.querySelector('[data-add-node="audio-input-mic"]').hidden,
+      true,
+      "unmatched nodes are filtered",
+    );
+    search.value = "";
+    search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+    shadow.querySelector('[data-node-id="recorder"] .node-select').click();
+    await nextTask();
+    const eventButton = shadow.querySelector('[data-add-event="dataavailable"]');
+    assert(eventButton, "the selected node exposes each declared event explicitly");
+    eventButton.click();
+    await nextTask();
+    await waitForLayout();
+    const addedEvent = [...editor.querySelectorAll(":scope > graph-event")].at(-1);
+    assertEqual(addedEvent.getAttribute("type"), "dataavailable", "the chosen event is retained");
+    assertEqual(
+      shadow.activeElement?.closest("[data-node-id]")?.dataset.nodeId,
+      addedEvent.id,
+      "focus follows the created event",
+    );
+
+    const functionButton = shadow.querySelector('[data-add-function="CustomHandlers.Audit"]');
+    assertEqual(functionButton.getAttribute("aria-disabled"), "false", "functions accept events");
+    functionButton.click();
+    await nextTask();
+    await waitForLayout();
+    const addedAction = [...editor.querySelectorAll(":scope > graph-action")].at(-1);
+    assertEqual(
+      addedAction.getAttribute("handler"),
+      "CustomHandlers.Audit(event)",
+      "one activation stores the stable function reference",
+    );
+    assertEqual(
+      addedAction.getAttribute("from"),
+      addedEvent.id,
+      "the action is connected to the selected event",
+    );
+    assertEqual(
+      shadow.activeElement?.closest("[data-node-id]")?.dataset.nodeId,
+      addedAction.id,
+      "focus follows the created action",
+    );
+  });
+
+  it("keeps an invalid advanced handler draft beside an actionable field error", async () => {
+    const editor = createEditor();
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    shadow.querySelector('[data-node-id="save"] .node-select').click();
+    await nextTask();
+    const handler = shadow.querySelector('[data-property="handler"]');
+    handler.focus();
+    handler.value = "alert('unsafe')";
+    handler.dispatchEvent(new Event("change", { bubbles: true }));
+    await nextTask();
+
+    const invalid = shadow.querySelector('[data-property="handler"]');
+    assertEqual(shadow.activeElement, invalid, "invalid editing retains focus after queued rendering");
+    assertEqual(invalid.value, "alert('unsafe')", "the rejected draft remains editable");
+    assertEqual(invalid.getAttribute("aria-invalid"), "true", "the field exposes invalid state");
+    const message = shadow.getElementById(invalid.getAttribute("aria-errormessage"));
+    assert(message?.textContent.includes("global function"), "the error gives a recovery hint");
+    assertEqual(
+      editor.querySelector("#save").getAttribute("handler"),
+      "SaveChunk(event)",
+      "the last valid graph value is preserved",
+    );
+    invalid.value = "Actions.Fixed(event)";
+    invalid.dispatchEvent(new Event("change", { bubbles: true }));
+    await nextTask();
+    const corrected = shadow.querySelector('[data-property="handler"]');
+    assertEqual(corrected.getAttribute("aria-invalid"), "false", "correction clears the error");
+    assertEqual(shadow.activeElement, corrected, "correction keeps keyboard focus in the Inspector");
+  });
+
+  it("explains runtime failures inside the editor even when the add tray is closed", async () => {
+    const editor = createEditor();
+    editor.registerFunction("SaveChunk", () => { throw new Error("Storage unavailable"); });
+    await nextTask();
+    editor.querySelector("#chunk").dispatchEvent(new CustomEvent("data", {
+      detail: { data: "blob", metadata: {} },
+    }));
+    const status = editor.shadowRoot.querySelector("[data-editor-status]");
+    assert(status?.textContent.includes("Storage unavailable"), "runtime errors are visible in the editor");
+    assert(status.textContent.includes("save"), "the message identifies the failing node");
+  });
+
+  it("offers legacy actions and registered suggestions with a recoverable search empty state", async () => {
+    const editor = createEditor();
+    editor.registerFunction("Process", () => {}, { label: "Process data" });
+    await nextTask();
+    const shadow = editor.shadowRoot;
+    shadow.querySelector('[data-node-id="chunk"] .node-select').click();
+    shadow.querySelector('[data-action="add-action"]').click();
+    await nextTask();
+    const input = shadow.querySelector('[data-property="handler"]');
+    assert(input.list?.querySelector('option[value="Process(event)"]'), "registered handlers are suggested");
+    const search = shadow.querySelector("[data-palette-search]");
+    search.value = "no-such-node";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    assert(!shadow.querySelector("[data-search-empty]").hidden, "no results offers a recovery path");
+    shadow.querySelector('[data-action="clear-search"]').click();
+    assertEqual(search.value, "", "clear search restores choices");
   });
 
   it("edits selected node properties through the inspector", async () => {
@@ -252,11 +452,12 @@ describe("graph-editor", () => {
 
   it("selects an event and action immediately after adding them from the palette", async () => {
     const editor = createEditor();
+    editor.registerFunction("HandleGraphEvent", () => {});
     await nextTask();
     const shadow = editor.shadowRoot;
 
     shadow.querySelector('[data-node-id="recorder"] .node-select').click();
-    shadow.querySelector('[data-action="add-event"]').click();
+    shadow.querySelector('[data-add-event="start"]').click();
     await nextTask();
     assert(
       shadow.querySelector('[data-node-id="graph-event-1"] .node-select[aria-pressed="true"]'),
@@ -264,7 +465,7 @@ describe("graph-editor", () => {
     );
     assert(shadow.querySelector('[data-property="type"]'), "event fields are ready to edit");
 
-    shadow.querySelector('[data-action="add-action"]').click();
+    shadow.querySelector('[data-add-function="HandleGraphEvent"]').click();
     await nextTask();
     assert(
       shadow.querySelector('[data-node-id="graph-action-1"] .node-select[aria-pressed="true"]'),

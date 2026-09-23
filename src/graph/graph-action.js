@@ -13,6 +13,7 @@ export class GraphActionElement extends HTMLElement {
   #handlerPath = null;
   #observer = null;
   #rewireQueued = false;
+  #revision = 0;
 
   connectedCallback() {
     this.#editor = this.closest("graph-editor");
@@ -61,18 +62,21 @@ export class GraphActionElement extends HTMLElement {
         "graph-event",
       );
       const handlerPath = parseGraphHandler(this.getAttribute("handler"));
+      const handlerChanged = handlerPath.join(".") !== this.#handlerPath?.join(".");
       if (source !== this.#source) {
         this.#detach();
         this.#source = source;
         source.addEventListener("data", this.#handleData);
       }
       this.#handlerPath = handlerPath;
+      if (handlerChanged) this.#revision += 1;
     } catch (error) {
       reportGraphError(this, error);
     }
   }
 
   #detach() {
+    this.#revision += 1;
     this.#source?.removeEventListener("data", this.#handleData);
     this.#source = null;
   }
@@ -80,8 +84,13 @@ export class GraphActionElement extends HTMLElement {
   #handleData = (event) => {
     const runEvent = new CustomEvent("run", { detail: event.detail });
     this.dispatchEvent(runEvent);
+    const revision = this.#revision;
     try {
-      resolveGraphHandler(this.#handlerPath).call(this, runEvent);
+      const result = resolveGraphHandler(this.#handlerPath, this.#editor).call(this, runEvent);
+      // Observe promises without delaying other listeners or leaking unhandled rejections.
+      Promise.resolve(result).catch((error) => {
+        if (this.isConnected && revision === this.#revision) reportGraphError(this, error);
+      });
     } catch (error) {
       reportGraphError(this, error);
     }

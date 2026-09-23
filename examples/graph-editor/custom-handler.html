@@ -19,9 +19,8 @@
           <p class="eyebrow">Graph editor · Application handler</p>
           <h1>Connect<br />application logic.</h1>
           <p class="hero-copy">
-            Write normal JavaScript, expose one named function, and use the
-            visual editor to connect browser data to it—without evaluating code
-            from the graph.
+            Write normal JavaScript, register it with one editor, and connect
+            browser data to it visually—without globals or evaluated code.
           </p>
         </header>
 
@@ -31,19 +30,21 @@
               <p class="eyebrow">Step 1 · JavaScript module</p>
               <h2 id="handler-code-heading">Write a reviewed handler</h2>
               <p class="field-help">
-                The implementation remains in a normal module. Only its stable
-                namespace is exposed to declarative markup.
+                The implementation remains in a normal module. Registering it
+                adds a labelled Function card to this editor only.
               </p>
             </div>
-            <pre class="code-sample"><code data-testid="handler-source">globalThis.CustomHandlers = {
-  Measure(event) {
-    const blob = event.detail.data;
-    console.log(blob.size, event.detail.metadata.sourceEvent);
-    appendResult("Measure", event);
-  },
+            <pre class="code-sample"><code data-testid="handler-source">const measure = (event) => {
+  console.log(event.detail.data.size);
+  console.log(event.detail.metadata.sourceEvent);
 };
 
-// The editor stores this reference, not the function body:
+editor.registerFunction("CustomHandlers.Measure", measure, {
+  label: "Measure recording",
+  description: "Reports the recorded Blob size",
+});
+
+// HTML stores the stable reference, never the function body:
 handler="CustomHandlers.Measure(event)"</code></pre>
           </section>
 
@@ -53,14 +54,14 @@ handler="CustomHandlers.Measure(event)"</code></pre>
                 <p class="eyebrow">Step 2 · Declarative connection</p>
                 <h2 id="handler-editor-heading">Wire it in the editor</h2>
                 <p class="field-help">
-                  The initial Measure action is runnable. Add an Audit path to
-                  see one event safely invoke multiple application functions.
+                  The initial Measure action is runnable. Add an Audit path
+                  without typing an event name or handler expression.
                 </p>
               </div>
-              <ol class="handler-steps" aria-label="Add another custom handler">
-                <li><span>1</span>Select <strong>Media recorder</strong>, then Add Event</li>
-                <li><span>2</span>Set type to <code>dataavailable</code></li>
-                <li><span>3</span>Add Action and set handler to <code>CustomHandlers.Audit(event)</code></li>
+              <ol class="handler-steps" aria-label="Add another registered function">
+                <li><span>1</span><div>Select <strong>Media recorder</strong></div></li>
+                <li><span>2</span><div>Choose the <code>dataavailable</code> Event</div></li>
+                <li><span>3</span><div>Choose <strong>Audit recording</strong></div></li>
               </ol>
             </div>
             <p class="graph-scroll-hint">

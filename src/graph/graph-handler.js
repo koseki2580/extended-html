@@ -1,3 +1,5 @@
+import { resolveRegisteredGraphFunction } from "./graph-functions.js";
+
 const HANDLER_PATTERN =
   /^\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(\s*event\s*\)\s*;?\s*$/;
 
@@ -5,17 +7,19 @@ export const parseGraphHandler = (source) => {
   const match = String(source ?? "").match(HANDLER_PATTERN);
   if (!match) {
     throw new SyntaxError(
-      "handler must call a global function with event, for example Handler(event)",
+      "handler must call a registered or global function with event, for example Handler(event)",
     );
   }
   return match[1].split(".");
 };
 
-export const resolveGraphHandler = (path) => {
+export const resolveGraphHandler = (path, editor = null) => {
+  const registered = editor && resolveRegisteredGraphFunction(editor, path);
+  if (registered) return registered;
   let handler = globalThis;
   for (const part of path) handler = handler?.[part];
   if (typeof handler !== "function") {
-    throw new ReferenceError(`${path.join(".")} is not a global function`);
+    throw new ReferenceError(`${path.join(".")} is unavailable. Register it with editor.registerFunction() or provide a global function.`);
   }
   return handler;
 };

@@ -346,11 +346,33 @@ outputButton.addEventListener("click", async () =&gt; {
           </p>
           <p>
             <code>&lt;graph-event from="recorder" type="dataavailable"&gt;</code>は
-            既存eventをgraph nodeとして公開します。接続した
-            <code>&lt;graph-action handler="SaveChunk(event)"&gt;</code>は指定されたglobal関数だけを呼び、
-            任意のJavaScriptを評価しません。
+            既存イベントをノードとして公開します。接続した
+            <code>&lt;graph-action&gt;</code>は利用者が用意した関数を呼び出し、
+            データを<code>event.detail.data</code>で渡します。関数をeditorへ登録すると、
+            Functionsパレットから選べるようになります。
+          </p>
+          <pre class="code-block"><code>const editor = document.querySelector("#editor");
+const unregister = editor.registerFunction("Audit", (event) =&gt; {
+  console.log(event.detail.data);
+}, {
+  label: "Audit recording",
+  description: "Inspect the recorded Blob",
+});</code></pre>
+          <p>
+            recorderノードを選び、Eventsの<code>dataavailable</code>、続いてFunctionsの
+            <strong>Audit recording</strong>を選ぶと、イベントとアクションのノードが作成・接続されます。
+            Add nodesパネルでは名前や説明で検索できます。追加できない項目には、
+            先にどのノードを選ぶ必要があるか表示されます。
+          </p>
+          <p>
+            関数の登録はそのeditorだけに適用され、不要になったら<code>unregister()</code>で解除できます。
+            出力したHTMLに保存されるのは<code>handler="Audit(event)"</code>という参照だけなので、
+            HTMLを読み込む際には関数を再登録してください。従来のglobal関数の参照も使えますが、
+            同名の関数がeditorに登録されている場合はそちらを優先します。
+            handlerの文字列を<code>eval</code>や<code>new Function</code>でコードとして実行することはありません。
           </p>
           <a class="example-link" href="../../examples/graph-editor/">Graph editorサンプル</a>
+          <a class="example-link" href="../../examples/graph-editor/custom-handler.html">任意関数を登録するサンプル</a>
         </section>
 
         <section class="guide-section" id="event-source">

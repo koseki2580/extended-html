@@ -363,10 +363,35 @@ outputButton.addEventListener("click", async () =&gt; {
           <p>
             <code>&lt;graph-event from="recorder" type="dataavailable"&gt;</code>
             exposes an existing event as a graph node. A connected
-            <code>&lt;graph-action handler="SaveChunk(event)"&gt;</code> calls only the
-            named global function; it does not evaluate arbitrary JavaScript.
+            <code>&lt;graph-action&gt;</code> calls an application function with the
+            payload in <code>event.detail.data</code>. Register your function on
+            the editor to make it available in the Functions palette:
+          </p>
+          <pre class="code-block"><code>const editor = document.querySelector("#editor");
+const unregister = editor.registerFunction("Audit", (event) =&gt; {
+  console.log(event.detail.data);
+}, {
+  label: "Audit recording",
+  description: "Inspect the recorded Blob",
+});</code></pre>
+          <p>
+            Select a recorder node, choose <code>dataavailable</code> under Events,
+            then choose <strong>Audit recording</strong> under Functions. The
+            editor creates and connects the event and action nodes. Search the
+            Add nodes panel by name or description; unavailable choices explain
+            which node to select first.
+          </p>
+          <p>
+            Registration belongs to this editor only. Call <code>unregister()</code>
+            when the function is no longer needed. Exported HTML stores only
+            <code>handler="Audit(event)"</code>, so register the function again
+            when loading that HTML. Existing global handler references remain
+            supported; an editor registration with the same name takes priority.
+            Handler strings are references, never code evaluated with
+            <code>eval</code> or <code>new Function</code>.
           </p>
           <a class="example-link" href="../../examples/graph-editor/">Graph editor example</a>
+          <a class="example-link" href="../../examples/graph-editor/custom-handler.html">Custom function example</a>
         </section>
 
         <section class="guide-section" id="event-source">

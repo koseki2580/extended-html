@@ -48,11 +48,6 @@ const NODE_DEFINITIONS = new Map([
 ]);
 
 const SOURCE_TYPES = new Set(["audio-input-mic", "audio-input-file"]);
-const CHILD_TYPES = new Set([
-  "audio-biquad-filter",
-  "audio-output",
-  "audio-stream-output",
-]);
 
 const syntaxError = (message) => new DOMException(message, "SyntaxError");
 
@@ -114,6 +109,24 @@ const restoreAttribute = (element, name, hadAttribute, value) => {
 
 const validate = (root) => buildAudioGraphPlan(root);
 
+const validateNodeAddition = (root, localName, parent) => {
+  requireRoot(root);
+  if (!NODE_DEFINITIONS.has(localName) || localName === "media-recorder") {
+    throw new TypeError(`Unsupported audio graph node type <${localName}>`);
+  }
+  if (SOURCE_TYPES.has(localName)) {
+    if (parent !== null) throw syntaxError(`<${localName}> must be a root source`);
+    return;
+  }
+  if (parent === null) {
+    throw syntaxError(`Select a source or processor before adding <${localName}>`);
+  }
+  requireNode(root, parent);
+  if (["audio-output", "audio-stream-output", "media-recorder"].includes(parent.localName)) {
+    throw syntaxError(`<${parent.localName}> cannot contain <${localName}>`);
+  }
+};
+
 export const audioGraphAdapter = {
   nodeTypes: [...NODE_DEFINITIONS.entries()]
     .filter(([localName]) => localName !== "media-recorder")
@@ -122,6 +135,15 @@ export const audioGraphAdapter = {
       kind: definition.kind,
       label: definition.label,
     })),
+
+  canAdd(root, localName, { parent = null } = {}) {
+    try {
+      validateNodeAddition(root, localName, parent);
+      return { allowed: true, reason: "" };
+    } catch (error) {
+      return { allowed: false, reason: error.message };
+    }
+  },
 
   read(root) {
     requireRoot(root);
@@ -156,19 +178,7 @@ export const audioGraphAdapter = {
   },
 
   addNode(root, localName, { parent = null } = {}) {
-    requireRoot(root);
-    if (!NODE_DEFINITIONS.has(localName) || localName === "media-recorder") {
-      throw new TypeError(`Unsupported audio graph node type <${localName}>`);
-    }
-
-    if (SOURCE_TYPES.has(localName)) {
-      if (parent !== null) throw syntaxError(`<${localName}> must be a root source`);
-    } else if (CHILD_TYPES.has(localName)) {
-      requireNode(root, parent);
-      if (["audio-output", "audio-stream-output", "media-recorder"].includes(parent.localName)) {
-        throw syntaxError(`<${parent.localName}> cannot contain <${localName}>`);
-      }
-    }
+    validateNodeAddition(root, localName, parent);
 
     const element = document.createElement(localName);
     element.id = nextId(root, localName);

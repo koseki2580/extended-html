@@ -1,5 +1,6 @@
 import { findGraphAdapter } from "./graph-adapters.js";
 import { graphEditorStyles } from "./graph-editor.css.js";
+import { listGraphFunctions, registerGraphFunction } from "./graph-functions.js";
 import { findUniqueGraphElement, parseGraphHandler } from "./graph-handler.js";
 
 const escapeHtml = (value) =>
@@ -88,12 +89,12 @@ const layoutGraph = (nodes, edges) => {
   return positions;
 };
 
-const orchestrationDescriptor = (element, kind, properties) => ({
+const orchestrationDescriptor = (element, kind, properties, label = null) => ({
   element,
   id: element.id,
   nodeName: element.localName,
   kind,
-  label: kind === "event" ? "Event" : "Action",
+  label: label ?? (kind === "event" ? "Event" : "Action"),
   properties: properties.map((name) => ({ name, value: element.getAttribute(name) })),
   events: kind === "event" ? ["data"] : ["run"],
   position: {
@@ -113,14 +114,25 @@ export class GraphEditorElement extends HTMLElement {
   #connectToId = "";
   #drag = null;
   #connectionSource = null;
+  #paletteQuery = "";
+  #paletteStatus = "Choose a node to see available additions.";
+  #statusTone = "info";
+  #fieldErrors = new Map();
+  #panelState = { palette: false, inspector: false };
 
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this.shadowRoot.addEventListener("click", this.#handleClick);
     this.shadowRoot.addEventListener("change", this.#handleChange);
+    this.shadowRoot.addEventListener("input", this.#handleInput);
     this.shadowRoot.addEventListener("pointerdown", this.#handlePointerDown);
     this.shadowRoot.addEventListener("pointerup", this.#handlePortPointerUp);
+    this.addEventListener("error", (event) => {
+      if (event.target !== this || !event.detail?.data) return;
+      const { data, metadata } = event.detail;
+      this.#announce(`${metadata?.nodeId ? `#${metadata.nodeId}: ` : ""}${data.message ?? data}`, "error");
+    });
   }
 
   connectedCallback() {
@@ -142,6 +154,23 @@ export class GraphEditorElement extends HTMLElement {
 
   serialize() {
     return this.innerHTML.trim();
+  }
+
+  registerFunction(name, fn, metadata = {}) {
+    try {
+      const unregister = registerGraphFunction(this, name, fn, metadata);
+      let active = true;
+      this.#queueRender();
+      return () => {
+        if (!active) return;
+        active = false;
+        unregister();
+        this.#queueRender();
+      };
+    } catch (error) {
+      this.#reportError(error);
+      throw error;
+    }
   }
 
   addNode(localName, options = {}) {
@@ -240,7 +269,19 @@ export class GraphEditorElement extends HTMLElement {
     }
     for (const element of this.querySelectorAll(":scope > graph-action")) {
       if (!element.id) element.id = this.#nextId("graph-action");
-      const node = orchestrationDescriptor(element, "action", ["from", "handler"]);
+      const handler = element.getAttribute("handler");
+      const registered = listGraphFunctions(this).find(
+        (candidate) => candidate.handler === handler,
+      );
+      let label = registered?.label ?? "Action";
+      if (!registered) {
+        try {
+          label = parseGraphHandler(handler).at(-1);
+        } catch {
+          // Invalid light-DOM markup remains visible as a generic action until corrected.
+        }
+      }
+      const node = orchestrationDescriptor(element, "action", ["from", "handler"], label);
       nodes.push(node);
       byId.set(node.id, node);
       const source = byId.get(element.getAttribute("from"));
@@ -251,6 +292,7 @@ export class GraphEditorElement extends HTMLElement {
 
   #render() {
     try {
+      const focusedProperty = this.shadowRoot.activeElement?.getAttribute("data-property");
       this.#model = this.#readModel();
       if (this.#selectedId && !this.#model.nodes.some((node) => node.id === this.#selectedId)) {
         this.#selectedId = null;
@@ -273,27 +315,7 @@ export class GraphEditorElement extends HTMLElement {
       this.shadowRoot.innerHTML = `
         <style>${graphEditorStyles}</style>
         <div class="layout">
-          <aside class="panel palette" aria-label="Graph node palette">
-            <div class="panel-heading">
-              <h2>Nodes</h2>
-              <p>Add building blocks</p>
-            </div>
-            <div class="palette-list">
-              ${this.#adapter.nodeTypes.map((type) => `
-                <button type="button" aria-label="Add ${escapeHtml(type.label)}" data-add-node="${escapeHtml(type.localName)}"
-                  data-node-kind="${escapeHtml(type.kind)}">
-                  <span class="palette-icon">${iconMarkup(type.kind)}</span>
-                  <span><strong>${escapeHtml(type.label)}</strong><small>${escapeHtml(KIND_LABELS[type.kind] ?? type.kind)}</small></span>
-                </button>
-              `).join("")}
-              <button type="button" aria-label="Add Event" data-action="add-event" data-node-kind="event" ${selected?.events.length ? "" : "disabled"}>
-                <span class="palette-icon">${iconMarkup("event")}</span><span><strong>Event</strong><small>From selected node</small></span>
-              </button>
-              <button type="button" aria-label="Add Action" data-action="add-action" data-node-kind="action" ${selected?.kind === "event" ? "" : "disabled"}>
-                <span class="palette-icon">${iconMarkup("action")}</span><span><strong>Action</strong><small>From selected event</small></span>
-              </button>
-            </div>
-          </aside>
+          ${this.#paletteMarkup(selected)}
           <section class="workspace" aria-label="Graph canvas">
             ${this.#toolbarMarkup()}
             ${this.#navigatorMarkup(selected, relatedIds)}
@@ -311,14 +333,26 @@ export class GraphEditorElement extends HTMLElement {
             </div>
           </section>
           <aside class="panel inspector" aria-label="Graph node inspector">
-            <div class="panel-heading">
-              <h2>Inspector</h2>
-              <p>Configure selection</p>
+            <button class="mobile-panel-toggle" type="button" data-toggle-panel="inspector"
+              aria-expanded="${this.#panelState.inspector}" aria-controls="graph-inspector-content">
+              <span>Inspector</span><small>Configure selected node</small>
+            </button>
+            <div id="graph-inspector-content" data-panel-content>
+              <div class="panel-heading">
+                <h2>Inspector</h2>
+                <p>Configure selection</p>
+              </div>
+              ${this.#inspectorMarkup(selected, relationships)}
             </div>
-            ${this.#inspectorMarkup(selected, relationships)}
           </aside>
         </div>
+        <p class="palette-status" data-editor-status data-tone="${this.#statusTone}" role="status">${escapeHtml(this.#paletteStatus)}</p>
       `;
+      if (focusedProperty) {
+        this.shadowRoot.querySelector(
+          `[data-property="${CSS.escape(focusedProperty)}"]`,
+        )?.focus({ preventScroll: true });
+      }
       this.#updateEdges();
       requestAnimationFrame(() => this.#updateEdges());
       this.dispatchEvent(new CustomEvent("ready", {
@@ -330,6 +364,127 @@ export class GraphEditorElement extends HTMLElement {
     } catch (error) {
       this.#reportError(error);
     }
+  }
+
+  #paletteMarkup(selected) {
+    const query = this.#paletteQuery.trim().toLowerCase();
+    const matches = (values) => !query || values.some(
+      (value) => String(value ?? "").toLowerCase().includes(query),
+    );
+    const nodeItems = this.#adapter.nodeTypes.map((type) => {
+      const parent = type.kind === "source" ? null : selected?.element ?? null;
+      const capability = this.#adapter.canAdd?.(this.#root, type.localName, { parent })
+        ?? {
+          allowed: true,
+          reason: "",
+        };
+      return {
+        group: type.kind === "source" ? "inputs" : "processing",
+        kind: type.kind,
+        label: type.label,
+        detail: capability.allowed
+          ? KIND_LABELS[type.kind] ?? type.kind
+          : capability.reason,
+        allowed: capability.allowed,
+        reason: capability.reason,
+        attribute: `data-add-node="${escapeHtml(type.localName)}" data-node-kind="${escapeHtml(type.kind)}"`,
+        search: [type.label, type.localName, type.kind, capability.reason],
+      };
+    });
+    const eventItems = (selected?.events ?? []).map((type) => ({
+      group: "events",
+      kind: "event",
+      label: type,
+      detail: `From #${selected.id}`,
+      allowed: true,
+      reason: "",
+      attribute: `data-add-event="${escapeHtml(type)}"`,
+      search: ["event", type, selected.label, selected.id],
+    }));
+    const registeredFunctions = listGraphFunctions(this);
+    const functionItems = registeredFunctions.map((descriptor) => {
+      const allowed = selected?.kind === "event";
+      const reason = allowed ? "" : "Select an event before adding a function";
+      return {
+        group: "functions",
+        kind: "action",
+        label: descriptor.label,
+        detail: allowed ? descriptor.description || descriptor.name : reason,
+        allowed,
+        reason,
+        attribute: `data-add-function="${escapeHtml(descriptor.name)}"`,
+        search: [descriptor.label, descriptor.name, descriptor.description, "function", "action"],
+      };
+    });
+    const legacyAction = {
+      group: "functions", kind: "action", label: "Action",
+      detail: "Advanced: enter a registered or global function reference",
+      allowed: selected?.kind === "event",
+      reason: "Select an event before adding an action",
+      attribute: 'data-action="add-action"',
+      search: ["action", "legacy", "handler", "function"],
+    };
+    const items = [...nodeItems, ...eventItems, ...functionItems, legacyAction].map((item) => ({
+      ...item,
+      visible: matches(item.search),
+    }));
+    const renderItems = (group) => items
+      .filter((item) => item.group === group)
+      .map((item) => `
+        <button type="button" ${item.attribute}
+          aria-label="Add ${escapeHtml(item.label)}"
+          aria-disabled="${!item.allowed}"
+          data-disabled-reason="${escapeHtml(item.reason)}"
+          data-search-text="${escapeHtml(item.search.join(" "))}"
+          ${item.visible ? "" : "hidden"}>
+          <span class="palette-icon">${iconMarkup(item.kind)}</span>
+          <span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>
+        </button>
+      `).join("");
+    const renderGroup = (id, label, empty) => {
+      const groupItems = items.filter((item) => item.group === id);
+      const visible = groupItems.some((item) => item.visible) || (!query && groupItems.length === 0);
+      return `
+        <section class="palette-group" data-palette-group="${id}" ${visible ? "" : "hidden"}>
+          <h3>${label}<span>${groupItems.length}</span></h3>
+          <div class="palette-list">${renderItems(id)}</div>
+          ${groupItems.length === 0 || (id === "functions" && registeredFunctions.length === 0)
+            ? `<p class="palette-empty">${escapeHtml(empty)}</p>` : ""}
+        </section>
+      `;
+    };
+    const resultCount = items.filter((item) => item.visible).length;
+    const context = selected
+      ? `Selected ${selected.label} #${selected.id}`
+      : "Select a node to add connected items";
+    return `
+      <aside class="panel palette" aria-label="Graph node palette">
+        <button class="mobile-panel-toggle" type="button" data-toggle-panel="palette"
+          aria-expanded="${this.#panelState.palette}" aria-controls="graph-palette-content">
+          <span>Add nodes</span><small>${resultCount} available options</small>
+        </button>
+        <div id="graph-palette-content" data-panel-content>
+          <div class="panel-heading">
+            <h2>Add nodes</h2>
+            <p id="palette-context">${escapeHtml(context)}</p>
+          </div>
+          <label class="palette-search" for="graph-palette-search">Find a node or function</label>
+          <input id="graph-palette-search" type="search" data-palette-search
+            value="${escapeHtml(this.#paletteQuery)}" aria-describedby="palette-context palette-results"
+            placeholder="Search nodes, events, functions">
+          <p id="palette-results" class="palette-results" data-palette-result-count>${resultCount} options</p>
+          <p class="palette-status" data-palette-status data-tone="${this.#statusTone}">${escapeHtml(this.#paletteStatus)}</p>
+          <div class="palette-empty" data-search-empty ${resultCount ? "hidden" : ""}>
+            <p>No matching nodes or functions. Try another name.</p>
+            <button type="button" data-action="clear-search">Clear search</button>
+          </div>
+          ${renderGroup("inputs", "Inputs", "No input nodes are registered.")}
+          ${renderGroup("processing", "Processing & outputs", "No processing nodes are registered.")}
+          ${renderGroup("events", "Events", "Select a node that exposes events.")}
+          ${renderGroup("functions", "Functions", "Register one with editor.registerFunction().")}
+        </div>
+      </aside>
+    `;
   }
 
   #toolbarMarkup() {
@@ -417,11 +572,32 @@ export class GraphEditorElement extends HTMLElement {
 
   #inspectorMarkup(selected, relationships) {
     if (!selected) return '<p class="empty">Select a node to edit it.</p>';
-    const fields = selected.properties.map((property) => `
-      <label>${escapeHtml(property.name)}
-        <input data-property="${escapeHtml(property.name)}" value="${escapeHtml(property.value ?? "")}">
-      </label>
-    `).join("");
+    const functions = listGraphFunctions(this);
+    const functionListId = "graph-function-suggestions";
+    const fields = selected.properties.map((property, index) => {
+      const key = `${selected.id}:${property.name}`;
+      const issue = this.#fieldErrors.get(key);
+      const inputId = `graph-property-${index}`;
+      const errorId = `${inputId}-error`;
+      const isHandler = selected.kind === "action" && property.name === "handler";
+      return `
+        <div class="field ${issue ? "field-invalid" : ""}">
+          <label for="${inputId}">${isHandler ? "Advanced handler reference" : escapeHtml(property.name)}</label>
+          ${isHandler ? '<span class="field-hint">Choose a registered function from Add nodes, or enter a legacy global reference.</span>' : ""}
+          <input id="${inputId}" data-property="${escapeHtml(property.name)}"
+            value="${escapeHtml(issue?.value ?? property.value ?? "")}"
+            ${isHandler && functions.length > 0 ? `list="${functionListId}"` : ""}
+            aria-invalid="${Boolean(issue)}"
+            ${issue ? `aria-errormessage="${errorId}"` : ""}>
+          ${issue ? `<span class="field-error" id="${errorId}">${escapeHtml(issue.message)}</span>` : ""}
+        </div>
+      `;
+    }).join("");
+    const functionOptions = selected.kind === "action" && functions.length > 0
+      ? `<datalist id="${functionListId}">${functions.map((descriptor) =>
+        `<option value="${escapeHtml(descriptor.handler)}">${escapeHtml(descriptor.label)}</option>`
+      ).join("")}</datalist>`
+      : "";
     const relationshipGroup = (label, nodes) => `
       <section class="relationship-group" aria-labelledby="graph-${label.toLowerCase()}-heading">
         <h3 id="graph-${label.toLowerCase()}-heading">${label} <span>${nodes.length}</span></h3>
@@ -441,12 +617,26 @@ export class GraphEditorElement extends HTMLElement {
         ${relationshipGroup("Inputs", relationships.incoming)}
         ${relationshipGroup("Outputs", relationships.outgoing)}
       </div>
-      <div class="fields">${fields || '<span class="empty">No editable properties.</span>'}</div>
+      <div class="fields">${fields || '<span class="empty">No editable properties.</span>'}${functionOptions}</div>
       ${["event", "action"].includes(selected.kind) ? "" : '<button class="danger" type="button" data-action="remove">Remove node</button>'}
     `;
   }
 
   #handleClick = (event) => {
+    const panelToggle = event.target.closest("[data-toggle-panel]");
+    if (panelToggle) {
+      const panel = panelToggle.dataset.togglePanel;
+      this.#panelState[panel] = !this.#panelState[panel];
+      panelToggle.setAttribute("aria-expanded", String(this.#panelState[panel]));
+      return;
+    }
+    const paletteButton = event.target.closest(
+      '[data-add-node], [data-add-event], [data-add-function], [data-action="add-action"]',
+    );
+    if (paletteButton?.getAttribute("aria-disabled") === "true") {
+      this.#announce(paletteButton.dataset.disabledReason || "This item is unavailable");
+      return;
+    }
     const navigatorButton = event.target.closest("[data-navigate-node]");
     if (navigatorButton) {
       this.#selectNode(navigatorButton.dataset.navigateNode, true);
@@ -469,8 +659,31 @@ export class GraphEditorElement extends HTMLElement {
       const options = addButton.dataset.nodeKind === "source" ? {} : { parent: selected?.element };
       this.#run(() => {
         const element = this.addNode(addButton.dataset.addNode, options);
-        this.#selectedId = element.id;
-        requestAnimationFrame(() => this.#revealNode(element.id));
+        this.#completeAddition(element, `${element.localName} added`);
+      });
+      return;
+    }
+
+    const eventButton = event.target.closest("[data-add-event]");
+    if (eventButton) {
+      const selected = this.#selectedNode();
+      this.#run(() => {
+        const element = this.addEvent(selected?.element, eventButton.dataset.addEvent);
+        this.#completeAddition(element, `${eventButton.dataset.addEvent} event added`);
+      });
+      return;
+    }
+
+    const functionButton = event.target.closest("[data-add-function]");
+    if (functionButton) {
+      const selected = this.#selectedNode();
+      this.#run(() => {
+        const descriptor = listGraphFunctions(this).find(
+          (candidate) => candidate.name === functionButton.dataset.addFunction,
+        );
+        if (!descriptor) throw new ReferenceError("The selected function is no longer registered");
+        const element = this.addAction(selected?.element, descriptor.handler);
+        this.#completeAddition(element, `${descriptor.label} action added`);
       });
       return;
     }
@@ -481,6 +694,13 @@ export class GraphEditorElement extends HTMLElement {
   };
 
   #performAction(action) {
+    if (action === "clear-search") {
+      const search = this.shadowRoot.querySelector("[data-palette-search]");
+      search.value = "";
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+      search.focus();
+      return;
+    }
     if (action === "connect" || action === "disconnect") {
       const fromId = this.shadowRoot.querySelector("[data-connect-from]").value;
       const toId = this.shadowRoot.querySelector("[data-connect-to]").value;
@@ -493,15 +713,9 @@ export class GraphEditorElement extends HTMLElement {
     }
     const selected = this.#selectedNode();
     if (action === "remove") return this.removeNode(selected.element);
-    if (action === "add-event") {
-      if (!selected?.events.length) throw new TypeError("Selected node exposes no events");
-      const element = this.addEvent(selected.element, selected.events[0]);
-      this.#selectedId = element.id;
-      return element;
-    }
     if (action === "add-action") {
       const element = this.addAction(selected.element);
-      this.#selectedId = element.id;
+      this.#completeAddition(element, "Action added. Set its handler in the Inspector.");
       return element;
     }
   }
@@ -510,7 +724,39 @@ export class GraphEditorElement extends HTMLElement {
     const input = event.target.closest("[data-property]");
     if (!input) return;
     const selected = this.#selectedNode();
-    this.#run(() => this.setProperty(selected.element, input.dataset.property, input.value));
+    const key = `${selected.id}:${input.dataset.property}`;
+    try {
+      this.setProperty(selected.element, input.dataset.property, input.value);
+      this.#fieldErrors.delete(key);
+      this.#announce(`${input.dataset.property} updated`);
+    } catch (error) {
+      this.#fieldErrors.set(key, { value: input.value, message: error.message });
+      this.#render();
+      const replacement = this.shadowRoot.querySelector(
+        `[data-property="${CSS.escape(input.dataset.property)}"]`,
+      );
+      replacement?.focus();
+    }
+  };
+
+  #handleInput = (event) => {
+    const search = event.target.closest("[data-palette-search]");
+    if (!search) return;
+    this.#paletteQuery = search.value;
+    const query = search.value.trim().toLowerCase();
+    const groups = [...this.shadowRoot.querySelectorAll("[data-palette-group]")];
+    let resultCount = 0;
+    for (const group of groups) {
+      const buttons = [...group.querySelectorAll("[data-search-text]")];
+      for (const button of buttons) {
+        button.hidden = Boolean(query) && !button.dataset.searchText.toLowerCase().includes(query);
+        if (!button.hidden) resultCount += 1;
+      }
+      group.hidden = Boolean(query) && !buttons.some((button) => !button.hidden);
+    }
+    this.shadowRoot.querySelector("[data-palette-result-count]").textContent =
+      `${resultCount} ${resultCount === 1 ? "option" : "options"}`;
+    this.shadowRoot.querySelector("[data-search-empty]").hidden = resultCount > 0;
   };
 
   #handlePointerDown = (event) => {
@@ -597,6 +843,22 @@ export class GraphEditorElement extends HTMLElement {
       if (edge.from.id === selected.id) outgoing.set(edge.to.id, edge.to);
     }
     return { incoming: [...incoming.values()], outgoing: [...outgoing.values()] };
+  }
+
+  #completeAddition(element, message) {
+    this.#selectedId = element.id;
+    this.#announce(message);
+    this.#queueRender();
+    requestAnimationFrame(() => this.#revealNode(element.id));
+  }
+
+  #announce(message, tone = "info") {
+    this.#paletteStatus = message;
+    this.#statusTone = tone;
+    for (const status of this.shadowRoot.querySelectorAll("[data-palette-status], [data-editor-status]")) {
+      status.textContent = message;
+      status.dataset.tone = tone;
+    }
   }
 
   #selectNode(id, reveal = false) {
@@ -707,8 +969,9 @@ export class GraphEditorElement extends HTMLElement {
   #run(operation) {
     try {
       operation();
-    } catch {
+    } catch (error) {
       // Public mutation methods already emit a structured error event.
+      this.#announce(error.message, "error");
     }
   }
 

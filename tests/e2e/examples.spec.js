@@ -430,7 +430,7 @@ test("Graph editor controls stay readable in a dark page and the default layout 
     };
     const controls = [...root.querySelectorAll(
       ".palette button, .toolbar button, .toolbar select, .navigator-list button, .node-select, .drag-handle, .port, .inspector button",
-    )];
+    )].filter((control) => control.getClientRects().length > 0);
     const cards = new Map(
       [...root.querySelectorAll("[data-node-id]")].map((card) => [
         card.dataset.nodeId,
@@ -550,7 +550,7 @@ test("overview and sidebar expose WebRTC and Graph editor samples", async ({ pag
   ).toHaveCount(1);
 });
 
-test("Custom handler sample runs a reviewed global function through the graph", async ({
+test("Custom handler sample runs an editor-scoped function through the graph", async ({
   page,
 }) => {
   const errors = watchPageErrors(page);
@@ -559,8 +559,9 @@ test("Custom handler sample runs a reviewed global function through the graph", 
   await expect(page.locator("body")).toHaveAttribute("data-page", "graph-custom-handler");
   await expect(page.getByRole("heading", { name: "Connect application logic." })).toBeVisible();
   await expect(page.getByTestId("handler-source")).toContainText(
-    "CustomHandlers.Measure(event)",
+    'editor.registerFunction("CustomHandlers.Measure"',
   );
+  expect(await page.evaluate(() => "CustomHandlers" in globalThis)).toBe(false);
   const editor = page.locator("graph-editor#handler-editor");
   await expect(editor.locator("graph-action#measure-chunk")).toHaveAttribute(
     "handler",
@@ -577,7 +578,7 @@ test("Custom handler sample runs a reviewed global function through the graph", 
   expect(errors).toEqual([]);
 });
 
-test("Custom handler sample adds a second event action entirely through the editor", async ({
+test("Custom handler sample adds a registered function action without typing references", async ({
   page,
 }) => {
   const errors = watchPageErrors(page);
@@ -585,20 +586,23 @@ test("Custom handler sample adds a second event action entirely through the edit
   const editor = page.locator("graph-editor#handler-editor");
 
   await editor.locator('[data-node-id="recorder"] .node-select').click();
-  await editor.getByRole("button", { name: "Add Event" }).click();
+  const addEvent = editor.getByRole("button", { name: "Add dataavailable" });
+  await addEvent.focus();
+  await addEvent.press("Enter");
   const addedEvent = editor.locator(":scope > graph-event").last();
   const eventId = await addedEvent.getAttribute("id");
-  await editor.locator('[data-property="type"]').fill("dataavailable");
-  await editor.locator('[data-property="type"]').press("Tab");
   await expect(addedEvent).toHaveAttribute("from", "recorder");
   await expect(addedEvent).toHaveAttribute("type", "dataavailable");
+  await expect(editor.locator(`[data-node-id="${eventId}"] .node-select`)).toBeFocused();
 
-  await editor.getByRole("button", { name: "Add Action" }).click();
+  const addFunction = editor.getByRole("button", { name: "Add Audit recording" });
+  await addFunction.focus();
+  await addFunction.press("Enter");
   const addedAction = editor.locator(":scope > graph-action").last();
-  await editor.locator('[data-property="handler"]').fill("CustomHandlers.Audit(event)");
-  await editor.locator('[data-property="handler"]').press("Tab");
   await expect(addedAction).toHaveAttribute("from", eventId);
   await expect(addedAction).toHaveAttribute("handler", "CustomHandlers.Audit(event)");
+  const actionId = await addedAction.getAttribute("id");
+  await expect(editor.locator(`[data-node-id="${actionId}"] .node-select`)).toBeFocused();
   await expect(page.getByTestId("serialized-handler-markup")).toContainText(
     'handler="CustomHandlers.Audit(event)"',
   );
@@ -610,20 +614,53 @@ test("Custom handler sample adds a second event action entirely through the edit
   expect(errors).toEqual([]);
 });
 
-for (const width of [375, 1440]) {
+for (const width of [375, 768, 1024, 1440]) {
   test(`Custom handler sample remains usable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${server.httpUrl}/examples/graph-editor/custom-handler.html`);
 
     await expect(page.getByRole("heading", { name: "Connect application logic." })).toBeVisible();
-    await expect(page.locator("graph-editor#handler-editor")).toBeVisible();
+    const editor = page.locator("graph-editor#handler-editor");
+    await expect(editor).toBeVisible();
+    if (width === 375) {
+      expect((await editor.boundingBox()).height).toBeLessThan(1400);
+    }
+    const addTray = editor.locator('[data-toggle-panel="palette"]');
+    if (await addTray.isVisible()) await addTray.click();
+    await expect(editor.locator("[data-palette-search]")).toBeVisible();
+    await expect(editor.locator("[data-add-function]")).toHaveCount(2);
+    expect(
+      await editor.evaluate((element) => [...element.shadowRoot.querySelectorAll("button")]
+        .filter((button) => button.getClientRects().length > 0)
+        .every((button) => {
+          const box = button.getBoundingClientRect();
+          return box.width >= 44 && box.height >= 44;
+        })),
+    ).toBe(true);
+    if (width === 1440) {
+      expect(
+        await editor.evaluate((element) => {
+          const root = element.shadowRoot;
+          const canvas = root.querySelector(".canvas").getBoundingClientRect();
+          const inspector = root.querySelector(".inspector").getBoundingClientRect();
+          return inspector.left >= canvas.right && inspector.top < canvas.bottom;
+        }),
+      ).toBe(true);
+    }
     const layout = await page.evaluate(() => ({
       pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      instructionOverlap: [...document.querySelectorAll(".handler-steps li")]
+        .some((item) => {
+          const number = item.querySelector("span").getBoundingClientRect();
+          const instruction = item.querySelector("div").getBoundingClientRect();
+          return instruction.left < number.right;
+        }),
       undersized: [...document.querySelectorAll("button")]
         .filter((button) => button.getBoundingClientRect().height < 44)
         .map((button) => button.textContent.trim()),
     }));
     expect(layout.pageOverflow).toBe(0);
+    expect(layout.instructionOverlap).toBe(false);
     expect(layout.undersized).toEqual([]);
   });
 }
@@ -650,6 +687,8 @@ for (const width of [375, 768, 1024, 1440]) {
     await page.goto(`${server.httpUrl}/examples/graph-editor/`);
 
     const editor = page.locator("graph-editor#editor");
+    const addTray = editor.locator('[data-toggle-panel="palette"]');
+    if (await addTray.isVisible()) await addTray.click();
     await expect(editor.getByRole("button", { name: "Add Microphone" })).toBeVisible();
     await expect(editor.locator('[aria-label="Graph canvas"]')).toBeVisible();
     await expect(editor.locator('[aria-label="Graph node inspector"]')).toBeVisible();

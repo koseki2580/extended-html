@@ -67,8 +67,8 @@ const appendResult = (handler, event) => {
   results.prepend(item);
 };
 
-// Application code is reviewed and loaded as a module; the graph stores only these paths.
-globalThis.CustomHandlers = Object.freeze({
+// Application code stays in this reviewed module; only stable references enter the graph.
+const CustomHandlers = Object.freeze({
   Measure(event) {
     measured += 1;
     measureCount.textContent = String(measured);
@@ -81,8 +81,14 @@ globalThis.CustomHandlers = Object.freeze({
   },
 });
 
-// Newly added actions use this valid placeholder until the Inspector changes their handler.
-globalThis.HandleGraphEvent = (event) => appendResult("Default", event);
+editor.registerFunction("CustomHandlers.Measure", CustomHandlers.Measure, {
+  label: "Measure recording",
+  description: "Reports the recorded Blob size",
+});
+editor.registerFunction("CustomHandlers.Audit", CustomHandlers.Audit, {
+  label: "Audit recording",
+  description: "Records delivery metadata",
+});
 
 const updateMarkup = () => {
   // Keep generated runtime resources out of the portable markup users copy.

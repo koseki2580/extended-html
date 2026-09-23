@@ -82,6 +82,40 @@ describe("audioGraphAdapter", () => {
     audioGraphAdapter.read(root);
   });
 
+  it("explains which node types can be added at the current selection", () => {
+    const root = createRoot();
+    const mic = root.querySelector("#mic");
+    const filter = root.querySelector("#filter");
+    const speaker = root.querySelector("#speaker");
+
+    assertEqual(
+      audioGraphAdapter.canAdd(root, "audio-input-file").allowed,
+      true,
+      "a source can be added at the root",
+    );
+    const missingParent = audioGraphAdapter.canAdd(root, "audio-biquad-filter");
+    assertEqual(missingParent.allowed, false, "a child requires a selection");
+    assert(missingParent.reason.includes("Select"), "the missing selection is actionable");
+    assertEqual(
+      audioGraphAdapter.canAdd(root, "audio-biquad-filter", { parent: mic }).allowed,
+      true,
+      "a source accepts a processor",
+    );
+    assertEqual(
+      audioGraphAdapter.canAdd(root, "audio-output", { parent: filter }).allowed,
+      true,
+      "a processor accepts an output",
+    );
+    const terminalParent = audioGraphAdapter.canAdd(root, "audio-biquad-filter", {
+      parent: speaker,
+    });
+    assertEqual(terminalParent.allowed, false, "a terminal output rejects children");
+    assert(
+      terminalParent.reason.includes("cannot contain"),
+      "the terminal reason explains the constraint",
+    );
+  });
+
   it("adds and removes cross-tree edges through the to attribute", () => {
     const root = createRoot();
     const music = root.querySelector("#music");
