@@ -15,7 +15,8 @@ npm test
 
 The aggregate command runs three layers in order:
 
-- `npm run test:unit` runs fast browser component tests.
+- `npm run test:unit` runs browser component tests one file at a time so
+  short-lived media and Worker timing checks remain stable under CI load.
 - `npm run test:pages` checks the GitHub Pages artifact and workflow contract.
 - `npm run test:e2e` starts a real Node WebSocket server and controls Chrome
   with Playwright.
