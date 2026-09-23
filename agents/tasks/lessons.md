@@ -104,3 +104,10 @@
 - **Rule:** When replacing a shadow tree, restore the active field after every render that can follow a mutation, and test focus after the queued task.
 - **Why:** Immediate focus assertions miss a later redraw that silently drops keyboard users into the page.
 - **Apply-when:** Rebuilding interactive Shadow DOM after attribute changes or validation rollback.
+
+## Run CI test commands locally without extra flags
+
+- **What happened:** Focused serial browser tests passed, but the unchanged `npm test` command ran files concurrently and timed out in CI.
+- **Rule:** Before pushing, run the exact CI aggregate command; encode required concurrency limits in package scripts instead of local-only flags.
+- **Why:** Faster focused runs can hide resource contention that the published workflow will encounter.
+- **Apply-when:** Adding browser, Worker, media, or timing-sensitive tests to a CI suite.
