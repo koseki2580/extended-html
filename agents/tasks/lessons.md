@@ -97,3 +97,10 @@
 - **Rule:** Give spatial editors an always-visible model navigator, and reveal newly selected or created items inside the canvas viewport.
 - **Why:** Selection clarity cannot help users discover content they cannot see or reach predictably.
 - **Apply-when:** Building graph, canvas, workflow, timeline, or other spatial editors.
+
+## Preserve editor focus across queued renders
+
+- **What happened:** An invalid Inspector edit focused its replacement input, then a queued MutationObserver render removed that focused element.
+- **Rule:** When replacing a shadow tree, restore the active field after every render that can follow a mutation, and test focus after the queued task.
+- **Why:** Immediate focus assertions miss a later redraw that silently drops keyboard users into the page.
+- **Apply-when:** Rebuilding interactive Shadow DOM after attribute changes or validation rollback.
